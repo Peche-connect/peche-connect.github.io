@@ -64,7 +64,7 @@ Le porteur du projet n'est pas développeur : explique les choix simplement, en 
 4. Rédiger le cahier des charges.
 5. Développer : stack suggérée **React Native (Expo) + Supabase** (comptes, base, temps réel) **+ Stripe Connect** ; lancement pilote sur une ou deux communes.
 
-## Organisation du dépôt (GitHub : GLRW/P-che-Connect)
+## Organisation du dépôt (GitHub : Peche-connect/peche-connect.github.io, organisation « Peche-connect », ex-GLRW/P-che-Connect)
 
 - `app/` : **la vraie application** (Expo / React Native, TypeScript, une seule base de code pour iPhone, Android et web). Tourne en « mode démo » (données locales) tant que Supabase et Stripe ne sont pas configurés.
   - `app/app/` : écrans (expo-router). `app/src/` : thème, types, données de démo, services.
@@ -72,7 +72,7 @@ Le porteur du projet n'est pas développeur : explique les choix simplement, en 
   - Construire la version web : `cd app && npm install && EXPO_OFFLINE=1 npx expo export --platform web` (le service de versions d'Expo est bloqué dans l'environnement cloud : les versions sont fixées à la main pour le SDK 52, `query-string` ajouté explicitement pour expo-router).
 - `demo/` : démo HTML fonctionnelle (`demo/app-demo/index.html`, en ligne sur claude.ai) et prototype cliquable.
 - `design/` : maquettes, logos, charte, captures (sans photos).
-- `docs/` : site GitHub Pages (https://glrw.github.io/P-che-Connect/). `docs/index.html` = la démo HTML ; `docs/app/` = **la vraie appli** (export web d'Expo, `baseUrl` `/P-che-Connect/app` (attention : adresse sensible aux majuscules) dans app.json) ; `docs/404.html` = copie de `docs/app/index.html` pour que les liens profonds de l'appli fonctionnent ; `.nojekyll` obligatoire (dossier `_expo`). Après chaque modif de l'appli : `cd app && npx tsc --noEmit && EXPO_OFFLINE=1 npx expo export --platform web`, puis recopier `app/dist` vers `docs/app` et `docs/404.html`.
+- `docs/` : site GitHub Pages (https://peche-connect.github.io/). **La vraie appli est à la racine** (export web d'Expo, `baseUrl` vide dans app.json) ; `docs/404.html` = copie de `docs/index.html` pour que les liens profonds fonctionnent ; `docs/demo/` = la démo HTML ; `.nojekyll` obligatoire (dossier `_expo`). Après chaque modif de l'appli : `cd app && npx tsc --noEmit && EXPO_OFFLINE=1 npx expo export --platform web`, puis recopier `app/dist/.` dans `docs/` (sans effacer `docs/demo/`) et `docs/index.html` vers `docs/404.html`. QR codes : `demo/qrcode-app.png` (appli) et `demo/qrcode-site.png` (démo).
 
 ## État de l'appli (`app/`)
 
