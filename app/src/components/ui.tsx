@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import React from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { couleurs as c, polices as f, rayon } from '../theme';
 
@@ -75,9 +75,10 @@ export function EnTete({ titre, sousTitre, fermer, droite }: { titre: string; so
   );
 }
 
-export function Vide({ titre, texte, action, onAction }: { titre: string; texte: string; action?: string; onAction?: () => void }) {
+export function Vide({ titre, texte, action, onAction, perso = true }: { titre: string; texte: string; action?: string; onAction?: () => void; perso?: boolean }) {
   return (
     <View style={{ padding: 32, alignItems: 'center', gap: 10 }}>
+      {perso ? <Image source={require('../../assets/embleme/personnage.png')} style={{ width: 150, height: 100, marginBottom: 4 }} resizeMode="contain" accessibilityIgnoresInvertColors /> : null}
       <T tresGras style={{ fontSize: 17, textAlign: 'center' }}>{titre}</T>
       <T gris style={{ textAlign: 'center' }}>{texte}</T>
       {action ? <Chip titre={action} actif onPress={onAction} /> : null}

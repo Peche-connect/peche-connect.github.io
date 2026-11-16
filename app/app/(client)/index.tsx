@@ -48,10 +48,11 @@ export default function Accueil() {
       <ScrollView contentContainerStyle={{ paddingBottom: 24, gap: 20 }}>
         {filtre === 'Tout' && !q ? (
           <View style={st.bandeau}>
-            <Image source={require('../../assets/ambiance/thon.jpg')} style={{ position: 'absolute', left: 0, top: 0, width: '100%', height: '100%' }} resizeMode="cover" accessibilityLabel="Pêcheur découpant un thon au marché" />
-            <View style={st.voile} />
-            <T tresGras style={{ color: '#fff', fontSize: 22, lineHeight: 26 }}>Le poisson du jour,{'\n'}en direct des pêcheurs</T>
-            <T gras style={{ color: '#fff', opacity: 0.9 }}>{liste.length} étals ouverts ce matin</T>
+            <View style={{ width: '54%', gap: 6, zIndex: 1 }}>
+              <T tresGras style={{ color: c.marine, fontSize: 19, lineHeight: 23 }}>Le poisson du jour, en direct des pêcheurs</T>
+              <T gras style={{ color: c.texte }}>{liste.length} étals ouverts ce matin</T>
+            </View>
+            <Image source={require('../../assets/embleme/personnage.png')} style={st.personnage} resizeMode="contain" accessibilityLabel="Un pêcheur tend un poisson à un client" />
           </View>
         ) : null}
         {!liste.length ? (
@@ -85,8 +86,8 @@ export default function Accueil() {
 }
 
 const st = StyleSheet.create({
-  bandeau: { marginHorizontal: 16, height: 170, borderRadius: 16, overflow: 'hidden', justifyContent: 'flex-end', padding: 16, gap: 4 },
-  voile: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(18,53,91,0.45)' },
+  bandeau: { marginHorizontal: 16, height: 170, borderRadius: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingLeft: 16, backgroundColor: c.beige },
+  personnage: { position: 'absolute', right: -4, bottom: 6, width: 170, height: 113 },
   recherche: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.doux, borderRadius: 999, paddingHorizontal: 16, height: 46 },
   champ: { flex: 1, fontSize: 16, fontFamily: f.normal, color: c.texte, height: 46 },
   h2: { fontSize: 19, paddingHorizontal: 16 },

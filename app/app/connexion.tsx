@@ -39,7 +39,7 @@ export default function Connexion() {
 
         {etape === 'numero' ? (
           <>
-            <Image source={require('../assets/ambiance/yoles.jpg')} style={st.ambiance} resizeMode="cover" accessibilityLabel="Yoles de pêcheurs sur la plage" />
+            <View style={st.ambiance}><Image source={require('../assets/embleme/embleme.png')} style={{ width: 210, height: 204 }} resizeMode="contain" accessibilityLabel="Emblème Pêche Connect : un pêcheur tend un poisson à un client" /></View>
             <View style={{ gap: 6 }}>
               <T tresGras style={{ fontSize: 24 }}>Bienvenue</T>
               <T gris>Le poisson du jour des pêcheurs de Martinique, réservé en quelques secondes.</T>
@@ -84,7 +84,7 @@ export default function Connexion() {
 }
 
 const st = StyleSheet.create({
-  ambiance: { width: '100%', height: 170, borderRadius: 16 },
+  ambiance: { width: '100%', height: 230, borderRadius: 16, backgroundColor: c.beige, alignItems: 'center', justifyContent: 'center' },
   bascule: { flexDirection: 'row', backgroundColor: c.doux, borderRadius: 999, padding: 4, gap: 4 },
   choix: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 999 },
   champ: { height: 52, borderRadius: 12, backgroundColor: c.doux, paddingHorizontal: 16, fontSize: 17, fontFamily: f.gras, color: c.texte },
