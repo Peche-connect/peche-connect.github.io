@@ -13,16 +13,18 @@ export function T({ style, gras, tresGras, gris, petit, children, ...p }: React.
 }
 
 // En-tête de l'appli : « PÊCHE / CONNECT » en entier, trait vertical à droite (choix du porteur)
-// Logo validé : « PÊCHE / CONNECT », le pêcheur de l'emblème juste après « PÊCHE », trait vertical à droite.
+// Logo validé : « PÊCHE / CONNECT », le pêcheur de l'emblème juste après « PÊCHE », trait vertical à droite, sur un cartouche beige (essai).
 export function Logo({ taille = 22 }: { taille?: number }) {
   const lettres = { fontFamily: f.logo, fontSize: taille, lineHeight: taille * 0.9, color: c.marine, letterSpacing: 1 };
   return (
-    <View style={{ borderRightWidth: Math.max(3, taille / 14), borderRightColor: c.marine, paddingRight: taille * 0.3, paddingTop: 3, alignSelf: 'flex-start' }} accessibilityLabel="Pêche Connect">
+    <View style={{ backgroundColor: c.beige, borderRadius: taille * 0.3, paddingVertical: taille * 0.22, paddingHorizontal: taille * 0.3, alignSelf: 'flex-start' }} accessibilityLabel="Pêche Connect">
+    <View style={{ borderRightWidth: Math.max(3, taille / 14), borderRightColor: c.marine, paddingRight: taille * 0.3, paddingTop: 3 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
         <Text style={lettres}>PÊCHE</Text>
         <Image source={require('../../assets/embleme/personnage.png')} style={{ width: taille * 1.05, height: taille * 0.7, marginLeft: taille * 0.06, marginBottom: taille * 0.12, marginRight: -taille * 0.2 }} resizeMode="contain" accessibilityIgnoresInvertColors />
       </View>
       <Text style={lettres}>CONNECT</Text>
+    </View>
     </View>
   );
 }
