@@ -98,6 +98,6 @@ const st = StyleSheet.create({
   repere: { borderRadius: 7, paddingHorizontal: 6, paddingVertical: 3 },
   choisi: { borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 3 },
   osm: { position: 'absolute', left: 6, top: 6, backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  volet: { backgroundColor: '#fff', borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingTop: 14, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 12, elevation: 6 },
+  volet: { backgroundColor: c.fond, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingTop: 14, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 12, elevation: 6 },
   mini: { borderWidth: 1, borderColor: c.ligne, borderRadius: 14, padding: 12, gap: 6 },
 });

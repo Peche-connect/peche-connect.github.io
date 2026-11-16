@@ -86,7 +86,7 @@ export default function Accueil() {
 }
 
 const st = StyleSheet.create({
-  bandeau: { marginHorizontal: 16, height: 170, borderRadius: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingLeft: 16, backgroundColor: c.beige },
+  bandeau: { marginHorizontal: 16, height: 170, borderRadius: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingLeft: 16, backgroundColor: c.doux },
   personnage: { position: 'absolute', right: -4, bottom: 6, width: 170, height: 113 },
   recherche: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.doux, borderRadius: 999, paddingHorizontal: 16, height: 46 },
   champ: { flex: 1, fontSize: 16, fontFamily: f.normal, color: c.texte, height: 46 },

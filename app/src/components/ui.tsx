@@ -128,7 +128,7 @@ export const s = StyleSheet.create({
   stepper: { flexDirection: 'row', alignItems: 'center', backgroundColor: c.doux, borderRadius: rayon.pilule, padding: 4 },
   stepBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
   voile: { flex: 1, backgroundColor: 'rgba(17,17,17,0.45)' },
-  feuille: { backgroundColor: '#fff', borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 10 },
+  feuille: { backgroundColor: c.fond, borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingHorizontal: 20, paddingTop: 10 },
   poignee: { width: 40, height: 4, borderRadius: 4, backgroundColor: c.ligne, alignSelf: 'center', marginBottom: 12 },
   photo: { borderRadius: 12, backgroundColor: '#ebebe8', alignItems: 'center', justifyContent: 'center' },
 });
