@@ -21,7 +21,7 @@ export function Logo({ taille = 22 }: { taille?: number }) {
     <View style={{ borderRightWidth: Math.max(3, taille / 14), borderRightColor: c.marine, paddingRight: taille * 0.3, paddingTop: 3 }}>
       <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
         <Text style={lettres}>PÊCHE</Text>
-        <Image source={require('../../assets/embleme/personnage.png')} style={{ width: taille * 1.05, height: taille * 0.7, marginLeft: taille * 0.06, marginBottom: taille * 0.12, marginRight: -taille * 0.2 }} resizeMode="contain" accessibilityIgnoresInvertColors />
+        <Image source={require('../../assets/embleme/pecheur.png')} style={{ width: taille * 1.05, height: taille * 0.85, marginLeft: taille * 0.06, marginBottom: taille * 0.1, marginRight: -taille * 0.2 }} resizeMode="contain" accessibilityIgnoresInvertColors />
       </View>
       <Text style={lettres}>CONNECT</Text>
     </View>
