@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CarteEtal } from '../../src/components/CarteEtal';
 import { IcCompte, IcLoupe } from '../../src/components/icones';
@@ -48,11 +48,10 @@ export default function Accueil() {
       <ScrollView contentContainerStyle={{ paddingBottom: 24, gap: 20 }}>
         {filtre === 'Tout' && !q ? (
           <View style={st.bandeau}>
-            <View style={{ width: '54%', gap: 6, zIndex: 1 }}>
+            <View style={{ gap: 6 }}>
               <T tresGras style={{ color: c.marine, fontSize: 19, lineHeight: 23 }}>Le poisson du jour, en direct des pêcheurs</T>
               <T gras style={{ color: c.texte }}>{liste.length} étals ouverts ce matin</T>
             </View>
-            <Image source={require('../../assets/embleme/personnage.png')} style={st.personnage} resizeMode="contain" accessibilityLabel="Un pêcheur tend un poisson à un client" />
           </View>
         ) : null}
         {!liste.length ? (
@@ -86,8 +85,7 @@ export default function Accueil() {
 }
 
 const st = StyleSheet.create({
-  bandeau: { marginHorizontal: 16, height: 170, borderRadius: 16, overflow: 'hidden', flexDirection: 'row', alignItems: 'center', paddingLeft: 16, backgroundColor: c.doux },
-  personnage: { position: 'absolute', right: -4, bottom: 6, width: 170, height: 113 },
+  bandeau: { marginHorizontal: 16, borderRadius: 16, padding: 18, backgroundColor: c.doux },
   recherche: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: c.doux, borderRadius: 999, paddingHorizontal: 16, height: 46 },
   champ: { flex: 1, fontSize: 16, fontFamily: f.normal, color: c.texte, height: 46 },
   h2: { fontSize: 19, paddingHorizontal: 16 },

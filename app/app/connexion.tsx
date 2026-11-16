@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, Logo, T } from '../src/components/ui';
 import { CODE_SMS_DEMO, MODE_DEMO, useApp } from '../src/store';
@@ -39,8 +39,7 @@ export default function Connexion() {
 
         {etape === 'numero' ? (
           <>
-            <View style={st.ambiance}><Image source={require('../assets/embleme/embleme.png')} style={{ width: 210, height: 204 }} resizeMode="contain" accessibilityLabel="Emblème Pêche Connect : un pêcheur tend un poisson à un client" /></View>
-            <View style={{ gap: 6 }}>
+                        <View style={{ gap: 6 }}>
               <T tresGras style={{ fontSize: 24 }}>Bienvenue</T>
               <T gris>Le poisson du jour des pêcheurs de Martinique, réservé en quelques secondes.</T>
             </View>
@@ -84,7 +83,6 @@ export default function Connexion() {
 }
 
 const st = StyleSheet.create({
-  ambiance: { width: '100%', height: 230, borderRadius: 16, backgroundColor: c.beige, alignItems: 'center', justifyContent: 'center' },
   bascule: { flexDirection: 'row', backgroundColor: c.doux, borderRadius: 999, padding: 4, gap: 4 },
   choix: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 999 },
   champ: { height: 52, borderRadius: 12, backgroundColor: c.doux, paddingHorizontal: 16, fontSize: 17, fontFamily: f.gras, color: c.texte },
