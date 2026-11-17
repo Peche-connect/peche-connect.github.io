@@ -16,6 +16,7 @@ Tant que les étapes 1 et 7 ne sont pas faites, le site reste en **mode démo** 
 3. **SQL Editor** : coller puis exécuter, dans l'ordre :
    - `app/supabase/migrations/20261117000000_schema.sql`
    - `app/supabase/migrations/20261117000100_photos_chauffeur_taches.sql`
+   - `app/supabase/migrations/20261117000200_messages_vocaux.sql`
 4. **Project Settings > API** : noter le *Project URL* et la clé *anon public* (publique, sans danger).
    La clé *service_role* est **secrète** : ne jamais la mettre dans l'appli ni sur GitHub.
 

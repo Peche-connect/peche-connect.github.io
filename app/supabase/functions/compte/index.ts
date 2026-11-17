@@ -13,7 +13,7 @@ servir(async (req) => {
       db.from('pros').select('*').eq('profil_id', u.id).maybeSingle(),
       db.from('etals').select('*, etals_prive(lieu, precision, immatriculation), produits(*)').eq('pecheur_id', u.id).maybeSingle(),
       db.from('bons').select('code, lignes, creneau, statut, montant_bloque, montant_paye, livraison, pro, cree_le, paye_le, retire_le').eq('client_id', u.id),
-      db.from('conversations').select('id, bon_code, cree_le, messages(auteur, texte, cree_le)').eq('client_id', u.id),
+      db.from('conversations').select('id, bon_code, cree_le, messages(auteur, texte, audio, cree_le)').eq('client_id', u.id),
       db.from('demandes').select('*').eq('pro_id', u.id),
       db.from('suivis').select('espece, commune').eq('profil_id', u.id),
     ]);
@@ -33,6 +33,12 @@ servir(async (req) => {
     }
     const { count: enCours } = await db.from('bons').select('id', { count: 'exact', head: true }).eq('client_id', u.id).in('statut', ['reserve', 'en_livraison']);
     if (enCours) throw new Erreur(409, 'Vous avez une réservation en cours : retirez-la ou attendez son annulation avant de supprimer votre compte.');
+    // messages vocaux des conversations du client : fichiers effacés
+    const { data: convs } = await db.from('conversations').select('id').eq('client_id', u.id);
+    for (const c of convs ?? []) {
+      const { data: fichiers } = await db.storage.from('messages-audio').list(c.id);
+      if (fichiers?.length) await db.storage.from('messages-audio').remove(fichiers.map((f) => c.id + '/' + f.name));
+    }
     await db.rpc('anonymiser_compte', { p_id: u.id });
     if (etal) { // l'étal disparaît de la vitrine ; ses ventes passées restent pour la comptabilité
       await db.from('produits').delete().eq('etal_id', etal.id);

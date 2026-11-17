@@ -28,7 +28,7 @@ export default function ConversationPecheur() {
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: c.fond }}>
       <EnTete titre={nom} sousTitre={'Bon ' + conv.bon} />
-      <Fil conv={conv} moi="pecheur" nomAutre={nom} rapides={['C’est prêt', 'Je vous attends', 'À tout de suite']} onEnvoyer={(t) => app.envoyer(id, t, 'pecheur')}
+      <Fil conv={conv} moi="pecheur" nomAutre={nom} rapides={['C’est prêt', 'Je vous attends', 'À tout de suite']} onEnvoyer={(t) => app.envoyer(id, t, 'pecheur')} onAudio={(a) => app.envoyerAudio(id, a, 'pecheur')}
         avant={<Pressable onPress={() => setFeuille(true)} style={{ margin: 16, marginBottom: 0, height: 46, borderRadius: 12, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center' }}><T tresGras style={{ color: '#fff' }}>Envoyer ma position</T></Pressable>} />
       <Feuille visible={feuille} onFermer={() => setFeuille(false)} titre="Envoyer ma position">
         {option('Partager en direct', 'Jusqu’à la fin du retrait', 'direct', true)}

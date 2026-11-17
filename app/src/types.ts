@@ -60,6 +60,7 @@ export type Message = {
   auteur: Role | 'systeme';
   texte?: string;
   position?: { libelle: string; lat: number; lon: number };
+  audio?: { uri: string; duree: number }; // message vocal (secondes)
   heure: number;
 };
 

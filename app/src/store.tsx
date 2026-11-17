@@ -3,6 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { Platform } from 'react-native';
 import { ETALS_DEMO, PORTS } from './data/demo';
 import { distanceKm, FRAIS_LIVRAISON, FRAIS_SERVICE, heure, kg, LIVRAISON_MIN_KG, montantBloque, sousTotal } from './format';
+import { versDataUrl, type Enregistrement } from './audio';
 import * as B from './services/backend';
 import type { Bon, Conversation, Demande, Etal, InfosPro, LignePanier, Message, Panier, Role, Session } from './types';
 
@@ -341,6 +342,27 @@ function useMagasin() {
           c.luClient = false; return x;
         }), 1300);
       }
+    },
+    // Message vocal (client ou pêcheur)
+    async envoyerAudio(convId: string, a: Enregistrement, auteur: Role) {
+      if (!MODE_DEMO) {
+        const c = ref.current.convs[convId];
+        try { if (c?.uuid) await B.envoyerAudio(c.uuid, auteur, a); await recharger(); } catch (err) { erreur(err); }
+        return;
+      }
+      // démo : le son est gardé sur ce téléphone (texte « data: » pour survivre au rechargement de la page)
+      const uri = a.donnees ? await versDataUrl(a.donnees) : a.uri;
+      maj((x) => {
+        const c = x.convs[convId];
+        c.messages.push({ id: 'v' + Date.now(), auteur, audio: { uri, duree: a.duree }, heure: tic(x) });
+        if (auteur === 'client') c.luPecheur = false; else c.luClient = false;
+        return x;
+      });
+      if (auteur === 'client') setTimeout(() => maj((x) => {
+        const c = x.convs[convId];
+        c.messages.push({ id: 'r' + Date.now(), auteur: 'pecheur', texte: 'Bien reçu votre message vocal, merci !', heure: tic(x) });
+        c.luClient = false; return x;
+      }), 1500);
     },
     // Position du pêcheur : visible seulement dans la conversation d'un client avec un bon payé,
     // et effacée automatiquement (fin du retrait, ou 30 min pour « une seule fois »)

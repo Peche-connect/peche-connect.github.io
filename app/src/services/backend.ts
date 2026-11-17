@@ -172,17 +172,24 @@ export async function chargerBons(moi: string): Promise<Bon[]> {
   }));
 }
 
-type LigneConv = { id: string; etal_id: string; client_id: string; client_prenom: string; bon_code: string | null; lu_client: boolean; lu_pecheur: boolean; messages: { id: string; auteur: Message['auteur']; texte: string | null; position: Message['position'] | null; cree_le: string }[] };
+type LigneConv = { id: string; etal_id: string; client_id: string; client_prenom: string; bon_code: string | null; lu_client: boolean; lu_pecheur: boolean; messages: { id: string; auteur: Message['auteur']; texte: string | null; position: Message['position'] | null; audio: { chemin: string; duree: number } | null; cree_le: string }[] };
 
 export async function chargerConversations(moi: string): Promise<Record<string, Conversation>> {
-  const convs = verif(await sb().from('conversations').select('id, etal_id, client_id, client_prenom, bon_code, lu_client, lu_pecheur, messages(id, auteur, texte, position, cree_le)').order('cree_le', { referencedTable: 'messages' })) as LigneConv[];
+  const convs = verif(await sb().from('conversations').select('id, etal_id, client_id, client_prenom, bon_code, lu_client, lu_pecheur, messages(id, auteur, texte, position, audio, cree_le)').order('cree_le', { referencedTable: 'messages' })) as LigneConv[];
+  // messages vocaux : dossier privé, liens d'écoute temporaires (1 h)
+  const chemins = convs.flatMap((c) => c.messages.filter((m) => m.audio).map((m) => m.audio!.chemin));
+  const liens: Record<string, string> = {};
+  if (chemins.length) {
+    const { data } = await sb().storage.from('messages-audio').createSignedUrls(chemins, 3600);
+    (data ?? []).forEach((d) => { if (d.path && d.signedUrl) liens[d.path] = d.signedUrl; });
+  }
   const r: Record<string, Conversation> = {};
   for (const c of convs) {
     const jeSuisClient = c.client_id === moi;
     const id = c.etal_id + '|' + (jeSuisClient ? 'Vous' : c.id);
     r[id] = {
       id, uuid: c.id, etalId: c.etal_id, client: jeSuisClient ? 'Vous' : c.client_prenom, bon: c.bon_code ?? '', luClient: c.lu_client, luPecheur: c.lu_pecheur,
-      messages: c.messages.map((m) => ({ id: m.id, auteur: m.auteur, texte: m.texte ?? undefined, position: m.position ?? undefined, heure: minutesMartinique(m.cree_le) })),
+      messages: c.messages.map((m) => ({ id: m.id, auteur: m.auteur, texte: m.texte ?? undefined, position: m.position ?? undefined, audio: m.audio && liens[m.audio.chemin] ? { uri: liens[m.audio.chemin], duree: m.audio.duree } : undefined, heure: minutesMartinique(m.cree_le) })),
     };
   }
   return r;
@@ -232,6 +239,15 @@ export const validerPesee = (code: string, poids: number[]) => fonction<{ montan
 
 export async function envoyerMessage(conv: string, auteur: 'client' | 'pecheur', texte?: string, position?: Message['position'], expireLe?: Date) {
   verif(await sb().from('messages').insert({ conversation_id: conv, auteur_id: await uid(), auteur, texte: texte ?? null, position: position ?? null, position_expire_le: expireLe?.toISOString() ?? null }));
+  verif(await sb().from('conversations').update(auteur === 'client' ? { lu_pecheur: false } : { lu_client: false }).eq('id', conv));
+}
+// Message vocal : fichier envoyé dans messages-audio/<conversation>/, puis message qui le référence
+export async function envoyerAudio(conv: string, auteur: 'client' | 'pecheur', a: { uri: string; type: string; duree: number; donnees?: Blob }) {
+  const corps = a.donnees ? await a.donnees.arrayBuffer() : await (await fetch(a.uri)).arrayBuffer();
+  const ext = a.type.includes('mp4') || a.type.includes('m4a') ? 'm4a' : a.type.includes('ogg') ? 'ogg' : 'webm';
+  const chemin = conv + '/' + Date.now() + '.' + ext;
+  verif(await sb().storage.from('messages-audio').upload(chemin, corps, { contentType: a.type, upsert: false }));
+  verif(await sb().from('messages').insert({ conversation_id: conv, auteur_id: await uid(), auteur, audio: { chemin, duree: a.duree } }));
   verif(await sb().from('conversations').update(auteur === 'client' ? { lu_pecheur: false } : { lu_client: false }).eq('id', conv));
 }
 export async function marquerLu(conv: string, role: 'client' | 'pecheur') {

@@ -1,5 +1,5 @@
 # Vérifications automatiques à chaque envoi sur GitHub : l'appli compile, les règles d'accès de la base
-# tiennent (47 tests), les calculs et la sécurité côté serveur (QR signé, webhook Stripe) sont corrects.
+# tiennent (55 tests), les calculs et la sécurité côté serveur (QR signé, webhook Stripe) sont corrects.
 name: Vérifications
 on:
   push:

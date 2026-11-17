@@ -101,11 +101,22 @@ update conversations set lu_client = true where client_id = auth.uid();
 do $$ begin insert into messages (conversation_id, auteur_id, auteur, texte) values ('30000000-0000-0000-0000-000000000001', auth.uid(), 'pecheur', 'faux');
   raise exception 'ÉCHEC   client se fait passer pour le pêcheur';
 exception when insufficient_privilege then raise notice 'OK      messagerie : un client ne peut pas écrire au nom du pêcheur'; end $$;
+-- messages vocaux : le client dépose et envoie dans SA conversation
+insert into storage.objects (bucket_id, name) values ('messages-audio', '30000000-0000-0000-0000-000000000001/1.webm');
+insert into messages (conversation_id, auteur_id, auteur, audio) values ('30000000-0000-0000-0000-000000000001', auth.uid(), 'client', '{"chemin":"30000000-0000-0000-0000-000000000001/1.webm","duree":7}');
+select pg_temp.verif((select count(*) from storage.objects where bucket_id = 'messages-audio') = 1, 'message vocal : le client l''envoie et peut le réécouter');
+do $$ begin insert into storage.objects (bucket_id, name) values ('messages-audio', '99999999-0000-0000-0000-000000000000/x.webm');
+  raise exception 'ÉCHEC   dépôt dans la conversation d''un autre';
+exception when insufficient_privilege then raise notice 'OK      message vocal : impossible de déposer dans une autre conversation'; end $$;
+do $$ begin insert into messages (conversation_id, auteur_id, auteur, audio) values ('30000000-0000-0000-0000-000000000001', auth.uid(), 'client', '{"chemin":"99999999-0000-0000-0000-000000000000/x.webm","duree":3}');
+  raise exception 'ÉCHEC   message pointant vers l''audio d''une autre conversation';
+exception when others then if sqlerrm like 'ÉCHEC%' then raise; end if; raise notice 'OK      message vocal : impossible de pointer vers le son d''une autre conversation'; end $$;
 reset role;
 
 -- ── Pêcheur ──
 set role authenticated; select pg_temp.qui('00000000-0000-0000-0000-00000000000a');
 select pg_temp.verif((select count(*) from bons) = 1, 'pêcheur : voit les bons de son étal');
+select pg_temp.verif((select count(*) from storage.objects where bucket_id = 'messages-audio') = 1, 'message vocal : le pêcheur de la conversation peut l''écouter');
 select pg_temp.verif((select count(*) from pros) = 0, 'pêcheur : ne voit pas le SIRET / l''adresse des pros');
 select pg_temp.verif((select count(*) from profils) = 1, 'pêcheur : ne voit pas le numéro des clients');
 select pg_temp.verif((select lieu from etals_prive) is not null, 'pêcheur : voit et gère son adresse');
@@ -121,6 +132,10 @@ reset role;
 update messages set position_expire_le = now() - interval '1 minute' where position is not null;
 select pg_temp.verif(effacer_positions_expirees() = 1, 'position : tâche d''effacement lancée');
 select pg_temp.verif(not exists (select 1 from messages where position is not null), 'position : effacée après expiration');
+
+set role authenticated; select pg_temp.qui('00000000-0000-0000-0000-00000000000c');
+select pg_temp.verif((select count(*) from storage.objects where bucket_id = 'messages-audio') = 0, 'message vocal : un autre client ne peut pas l''écouter');
+reset role;
 
 -- ── Pêcheur pas encore vérifié ──
 insert into auth.users (id) values ('00000000-0000-0000-0000-00000000000f');
