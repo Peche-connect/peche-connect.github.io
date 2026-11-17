@@ -49,6 +49,14 @@ export default function Carte() {
         {taille.w > 0 ? (
           <View style={{ width: taille.w, height: taille.h }}>
             <Image source={require('../../assets/carte-martinique.png')} style={{ width: taille.w, height: taille.h }} resizeMode="stretch" accessibilityLabel="Carte de la Martinique" />
+            {Object.keys(PORTS).filter((nom) => !garde(nom).length).map((nom) => {
+              const [px, py] = xy(PORTS[nom].lat, PORTS[nom].lon); const choisi = nom === port;
+              const t = PORTS[nom].type === 'Port territorial' ? 12 : 9;
+              return (
+                <Pressable key={nom} accessibilityLabel={nom + ', ' + PORTS[nom].type.toLowerCase() + ', aucun arrivage'} onPress={() => setPort(nom)} hitSlop={10}
+                  style={{ position: 'absolute', left: px * taille.w - t / 2, top: py * taille.h - t / 2, width: t, height: t, borderRadius: t / 2, backgroundColor: c.marine, borderWidth: 2, borderColor: choisi ? c.texte : '#fff' }} />
+              );
+            })}
             {Object.keys(PORTS).map((nom) => {
               const es = garde(nom); if (!es.length) return null;
               const [px, py] = xy(PORTS[nom].lat, PORTS[nom].lon);
@@ -86,7 +94,7 @@ export default function Carte() {
               </Pressable>
             ))}
           </ScrollView>
-        ) : <T gris>Aucun étal ne correspond au filtre dans ce port. Touchez un autre repère.</T>}
+        ) : <T gris>{PORTS[port]?.type ?? 'Port'} · {app.e.etals.some((e) => e.port === port) ? 'aucun étal ne correspond au filtre ici.' : 'aucun arrivage publié pour l’instant.'} Touchez un autre repère.</T>}
       </View>
     </SafeAreaView>
   );
