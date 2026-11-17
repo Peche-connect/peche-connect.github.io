@@ -97,8 +97,15 @@ describe('Réservation et paiement', () => {
     assert.equal(r.status, 400);
     assert.equal((await lire('bons/' + code)).statut, 'en_attente_paiement');
   });
+  test('un paiement au mauvais montant ou sur une autre page est refusé', async () => {
+    const sid = (await lire('bonsSecrets/' + code)).stripeSession;
+    await webhook({ type: 'checkout.session.completed', data: { object: { id: sid, object: 'checkout.session', status: 'complete', amount_total: 100, payment_intent: 'pi_x', metadata: { code } } } });
+    await webhook({ type: 'checkout.session.completed', data: { object: { id: 'cs_autre', object: 'checkout.session', status: 'complete', amount_total: 2730, payment_intent: 'pi_y', metadata: { code } } } });
+    assert.equal((await lire('bons/' + code)).statut, 'en_attente_paiement');
+  });
   test('le vrai message de Stripe confirme le paiement', async () => {
-    const r = await webhook({ type: 'checkout.session.completed', data: { object: { id: 'cs_1', object: 'checkout.session', status: 'complete', payment_intent: 'pi_1', metadata: { code } } } });
+    const sid = (await lire('bonsSecrets/' + code)).stripeSession;
+    const r = await webhook({ type: 'checkout.session.completed', data: { object: { id: sid, object: 'checkout.session', status: 'complete', amount_total: 2730, payment_intent: 'pi_1', metadata: { code } } } });
     assert.equal(r.status, 200);
     assert.equal((await lire('bons/' + code)).statut, 'reserve');
     assert.ok(await lire('acces/' + etalId + '_' + comptes.client.uid), 'adresse débloquée');

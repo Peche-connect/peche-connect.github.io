@@ -109,7 +109,9 @@ describe('Parcours complet en mode réel', () => {
     assert.equal(b.size, 1); code = b.docs[0].id;
     assert.equal(b.docs[0].data().statut, 'en_attente_paiement');
     // Stripe prévient le serveur que le paiement est accepté (message signé)
-    const corps = JSON.stringify({ id: 'evt_e2e', object: 'event', type: 'checkout.session.completed', data: { object: { id: 'cs_e2e', object: 'checkout.session', status: 'complete', payment_intent: 'pi_e2e', metadata: { code } } } });
+    const sid = (await db.doc('bonsSecrets/' + code).get()).data().stripeSession;
+    const montant = Math.round(b.docs[0].data().montantBloque * 100);
+    const corps = JSON.stringify({ id: 'evt_e2e', object: 'event', type: 'checkout.session.completed', data: { object: { id: sid, object: 'checkout.session', status: 'complete', amount_total: montant, payment_intent: 'pi_e2e', metadata: { code } } } });
     const r = await fetch(`http://127.0.0.1:5001/${PROJET}/europe-west9/stripeWebhook`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': stripe.webhooks.generateTestHeaderString({ payload: corps, secret: 'whsec_test_peche_connect' }) }, body: corps });
     assert.equal(r.status, 200);
     await client.goto(SITE + '/bon/' + code + '?paye=1');

@@ -2,7 +2,7 @@
 // SÉCURITÉ : chaque message est vérifié avec sa signature ; un faux « paiement réussi » est rejeté.
 import { onRequest } from 'firebase-functions/v2/https';
 import Stripe from 'stripe';
-import { db, FieldValue, QR_SECRET, REGION, stripe, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_CONNECT, Timestamp, alerte } from './commun';
+import { centimes, db, FieldValue, QR_SECRET, REGION, stripe, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_CONNECT, Timestamp, alerte } from './commun';
 import { notifier } from './notifier';
 import { signerBon } from './regles';
 import { annulerBon, ouvrirConversation } from './reservations';
@@ -33,11 +33,18 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
       case 'checkout.session.completed': {
         const s = ev.data.object;
         const code = s.metadata?.code;
-        if (!code || s.status !== 'complete') break;
+        if (ev.account || !code || s.status !== 'complete') break; // les paiements viennent du compte de la plateforme, jamais d'un compte de pêcheur
         const paiement = typeof s.payment_intent === 'string' ? s.payment_intent : s.payment_intent?.id ?? null;
         const b = await db.runTransaction(async (t) => {
           const ref = db.doc('bons/' + code); const bon = (await t.get(ref)).data();
-          if (!bon || bon.statut !== 'en_attente_paiement') return null; // déjà traité (Stripe peut renvoyer un message)
+          const secrets = (await t.get(db.doc('bonsSecrets/' + code))).data();
+          // la page payée doit être celle que le serveur a créée pour ce bon, au bon montant
+          if (!bon || secrets?.stripeSession !== s.id || s.amount_total !== centimes(bon.montantBloque)) {
+            return { refus: true as const, statut: bon?.statut ?? 'inconnu' };
+          }
+          if (bon.statut !== 'en_attente_paiement') {
+            return bon.statut === 'annule' ? { refus: true as const, statut: 'annule' } : null; // déjà traité (Stripe peut renvoyer un message)
+          }
           t.update(ref, { statut: 'reserve', payeLe: FieldValue.serverTimestamp() });
           t.set(db.doc('bonsSecrets/' + code), { stripePaiement: paiement, signature: signerBon(QR_SECRET.value(), code, code) }, { merge: true });
           // adresse exacte du pêcheur débloquée pour ce client, jusqu'au lendemain
@@ -45,6 +52,13 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
           return bon;
         });
         if (!b) break;
+        if ('refus' in b) {
+          // paiement qui ne correspond à aucun bon valable (bon annulé entre-temps, montant ou page inattendus) :
+          // l'empreinte est libérée tout de suite, rien n'est débité
+          await alerte(null, 'paiement Stripe refusé et libéré', { code, session: s.id, statut: b.statut, montant: s.amount_total });
+          if (paiement) await stripe().paymentIntents.cancel(paiement).catch(() => {});
+          break;
+        }
         await ouvrirConversation(b.etalId, b.pecheurId, b.clientId, b.clientPrenom, code,
           { auteur: 'systeme', texte: 'Réservation ' + code + ' payée. La messagerie est ouverte jusqu’au retrait.' });
         await notifier([b.pecheurId], 'Nouvelle réservation ' + code, b.clientPrenom + ' · ' + b.creneau, { lien: '/(pecheur)/reservations' });

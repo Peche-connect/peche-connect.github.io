@@ -114,6 +114,9 @@ export const payerBon = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async
   if (b.statut !== 'en_attente_paiement') throw erreur('failed-precondition', 'Ce bon est déjà payé ou annulé.');
   const compteStripe = (await db.doc('comptesStripe/' + b.etalId).get()).data()?.compte as string | undefined;
   if (!compteStripe) throw erreur('failed-precondition', 'Ce pêcheur ne peut pas encore recevoir de paiement.');
+  // l'ancienne page de paiement est fermée : un seul paiement possible par bon
+  const ancienne = (await db.doc('bonsSecrets/' + code).get()).data()?.stripeSession as string | undefined;
+  if (ancienne) await stripe().checkout.sessions.expire(ancienne).catch(() => {});
   const s = await sessionPaiement(code, b.montantBloque, compteStripe, req.auth?.token.email, true);
   await db.doc('bonsSecrets/' + code).set({ stripeSession: s.id }, { merge: true });
   return { url: s.url };
