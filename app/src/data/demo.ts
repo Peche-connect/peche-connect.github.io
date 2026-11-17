@@ -4,30 +4,32 @@ import type { Etal } from '../types';
 // Ports et abris de pêche de Martinique, d'après la carte « Le réseau de la pêche martiniquaise »
 // du Comité régional des pêches (ports territoriaux et APIT). Coordonnées approximatives (bourg / débarcadère).
 export type TypePort = 'Port territorial' | 'APIT' | 'Marché' | 'Débarcadère';
-export const PORTS: Record<string, { lat: number; lon: number; type: TypePort }> = {
-  'Grand-Rivière': { lat: 14.872, lon: -61.178, type: 'Port territorial' },
-  'Basse-Pointe': { lat: 14.874, lon: -61.114, type: 'APIT' },
-  'Le Marigot': { lat: 14.818, lon: -61.032, type: 'APIT' },
-  'Tartane': { lat: 14.76, lon: -60.905, type: 'APIT' },
-  'Trinité': { lat: 14.739, lon: -60.963, type: 'Port territorial' },
-  'Le Robert': { lat: 14.678, lon: -60.94, type: 'APIT' },
-  'Le François': { lat: 14.616, lon: -60.903, type: 'Port territorial' },
-  'Le Vauclin': { lat: 14.547, lon: -60.836, type: 'Port territorial' },
-  'Le Marin': { lat: 14.47, lon: -60.868, type: 'Port territorial' },
-  'Sainte-Anne': { lat: 14.437, lon: -60.88, type: 'APIT' },
-  'Sainte-Luce': { lat: 14.468, lon: -60.925, type: 'APIT' },
-  'Le Diamant': { lat: 14.477, lon: -61.029, type: 'Port territorial' },
-  'Les Anses-d’Arlet': { lat: 14.488, lon: -61.083, type: 'Port territorial' },
-  'Les Trois-Îlets': { lat: 14.54, lon: -61.036, type: 'APIT' },
-  'Ducos': { lat: 14.578, lon: -60.996, type: 'APIT' },
-  'Le Lamentin': { lat: 14.597, lon: -61.017, type: 'APIT' },
-  'Fort-de-France': { lat: 14.603, lon: -61.07, type: 'Marché' },
-  'Fond Lahaye': { lat: 14.617, lon: -61.117, type: 'APIT' },
-  'Case-Pilote': { lat: 14.64, lon: -61.138, type: 'Port territorial' },
-  'Belle-Fontaine': { lat: 14.672, lon: -61.159, type: 'Débarcadère' },
-  'Le Carbet': { lat: 14.709, lon: -61.181, type: 'APIT' },
-  'Saint-Pierre': { lat: 14.743, lon: -61.176, type: 'APIT' },
-  'Le Prêcheur': { lat: 14.802, lon: -61.224, type: 'APIT' },
+// cote : où placer l'étiquette sur la carte (d droite, g gauche, h dessus, b dessous, bg dessous à gauche)
+export type CoteEtiquette = 'd' | 'g' | 'h' | 'b' | 'bg';
+export const PORTS: Record<string, { lat: number; lon: number; type: TypePort; cote: CoteEtiquette }> = {
+  'Grand-Rivière': { lat: 14.872, lon: -61.178, type: 'Port territorial', cote: 'h' },
+  'Basse-Pointe': { lat: 14.874, lon: -61.114, type: 'APIT', cote: 'b' },
+  'Le Marigot': { lat: 14.818, lon: -61.032, type: 'APIT', cote: 'd' },
+  'Tartane': { lat: 14.76, lon: -60.905, type: 'APIT', cote: 'd' },
+  'Trinité': { lat: 14.739, lon: -60.963, type: 'Port territorial', cote: 'g' },
+  'Le Robert': { lat: 14.678, lon: -60.94, type: 'APIT', cote: 'd' },
+  'Le François': { lat: 14.616, lon: -60.903, type: 'Port territorial', cote: 'g' },
+  'Le Vauclin': { lat: 14.547, lon: -60.836, type: 'Port territorial', cote: 'g' },
+  'Le Marin': { lat: 14.47, lon: -60.868, type: 'Port territorial', cote: 'h' },
+  'Sainte-Anne': { lat: 14.437, lon: -60.88, type: 'APIT', cote: 'd' },
+  'Sainte-Luce': { lat: 14.468, lon: -60.925, type: 'APIT', cote: 'bg' },
+  'Le Diamant': { lat: 14.477, lon: -61.029, type: 'Port territorial', cote: 'g' },
+  'Les Anses-d’Arlet': { lat: 14.488, lon: -61.083, type: 'Port territorial', cote: 'g' },
+  'Les Trois-Îlets': { lat: 14.54, lon: -61.036, type: 'APIT', cote: 'd' },
+  'Ducos': { lat: 14.578, lon: -60.996, type: 'APIT', cote: 'd' },
+  'Le Lamentin': { lat: 14.597, lon: -61.017, type: 'APIT', cote: 'd' },
+  'Fort-de-France': { lat: 14.603, lon: -61.07, type: 'Marché', cote: 'b' },
+  'Fond Lahaye': { lat: 14.617, lon: -61.117, type: 'APIT', cote: 'g' },
+  'Case-Pilote': { lat: 14.64, lon: -61.138, type: 'Port territorial', cote: 'd' },
+  'Belle-Fontaine': { lat: 14.672, lon: -61.159, type: 'Débarcadère', cote: 'd' },
+  'Le Carbet': { lat: 14.709, lon: -61.181, type: 'APIT', cote: 'g' },
+  'Saint-Pierre': { lat: 14.743, lon: -61.176, type: 'APIT', cote: 'd' },
+  'Le Prêcheur': { lat: 14.802, lon: -61.224, type: 'APIT', cote: 'd' },
 };
 
 export const FILTRES = ['Tout', 'Moins d’1 h', 'Thon', 'Vivaneau', 'Dorade', 'Thazard', 'Colas', 'Langouste', 'Lambi'];
