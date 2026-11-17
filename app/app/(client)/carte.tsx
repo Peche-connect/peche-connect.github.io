@@ -49,12 +49,24 @@ export default function Carte() {
         {taille.w > 0 ? (
           <View style={{ width: taille.w, height: taille.h }}>
             <Image source={require('../../assets/carte-martinique.png')} style={{ width: taille.w, height: taille.h }} resizeMode="stretch" accessibilityLabel="Carte de la Martinique" />
-            {Object.keys(PORTS).filter((nom) => !garde(nom).length).map((nom) => {
+            {Object.keys(PORTS).filter((nom) => !garde(nom).length).map((nom, _i, vides) => {
               const [px, py] = xy(PORTS[nom].lat, PORTS[nom].lon); const choisi = nom === port;
-              const t = PORTS[nom].type === 'Port territorial' ? 12 : 9;
+              // pas de nom si une étiquette d'arrivage est juste à côté (évite les chevauchements)
+              const t = PORTS[nom].type === 'Port territorial' ? 16 : 12;
+              const aDroite = px < 0.55;
+              const X = px * taille.w, Y = py * taille.h, larg = nom.length * 5.6 + 10;
+              const nx0 = aDroite ? X + t / 2 : X - t / 2 - larg, nx1 = nx0 + larg;
+              const gene = Object.keys(PORTS).some((o) => {
+                if (!garde(o).length) return false;
+                const [ox, oy] = xy(PORTS[o].lat, PORTS[o].lon); const OX = ox * taille.w, OY = oy * taille.h;
+                return nx0 < OX + 34 && nx1 > OX - 34 && Y - 8 < OY - 6 && Y + 8 > OY - 32;
+              });
               return (
-                <Pressable key={nom} accessibilityLabel={nom + ', ' + PORTS[nom].type.toLowerCase() + ', aucun arrivage'} onPress={() => setPort(nom)} hitSlop={10}
-                  style={{ position: 'absolute', left: px * taille.w - t / 2, top: py * taille.h - t / 2, width: t, height: t, borderRadius: t / 2, backgroundColor: c.marine, borderWidth: 2, borderColor: choisi ? c.texte : '#fff' }} />
+                <Pressable key={nom} accessibilityLabel={nom + ', ' + PORTS[nom].type.toLowerCase() + ', aucun arrivage'} onPress={() => setPort(nom)} hitSlop={8}
+                  style={{ position: 'absolute', left: px * taille.w - (aDroite ? t / 2 : 110 - t / 2), top: py * taille.h - t / 2, width: 110, flexDirection: aDroite ? 'row' : 'row-reverse', alignItems: 'center', gap: 3 }}>
+                  <View style={{ width: t, height: t, borderRadius: t / 2, backgroundColor: c.marine, borderWidth: 3, borderColor: choisi ? '#ffd23f' : '#fff', shadowColor: '#000', shadowOpacity: 0.35, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 }} />
+                  {gene && !choisi ? null : <View style={st.nomPort}><T gras style={{ fontSize: 9.5, color: c.marine }} numberOfLines={1}>{nom}</T></View>}
+                </Pressable>
               );
             })}
             {Object.keys(PORTS).map((nom) => {
@@ -72,6 +84,11 @@ export default function Carte() {
               );
             })}
             <View style={st.osm}><T gris style={{ fontSize: 10 }}>© Contributeurs OpenStreetMap</T></View>
+            <View style={st.legende}>
+              <View style={st.ligneLeg}><View style={[st.pt, { width: 14, height: 14, borderRadius: 7 }]} /><T style={st.txtLeg}>Port territorial</T></View>
+              <View style={st.ligneLeg}><View style={[st.pt, { width: 10, height: 10, borderRadius: 5, marginHorizontal: 2 }]} /><T style={st.txtLeg}>Abri de pêche (APIT)</T></View>
+              <View style={st.ligneLeg}><View style={[st.repere, { backgroundColor: c.texte }]}><T tresGras style={{ fontSize: 9, color: '#fff' }}>1 étal</T></View><T style={st.txtLeg}>Arrivage du jour</T></View>
+            </View>
           </View>
         ) : null}
       </View>
@@ -105,7 +122,12 @@ const st = StyleSheet.create({
   basc: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 999 },
   repere: { borderRadius: 7, paddingHorizontal: 6, paddingVertical: 3 },
   choisi: { borderWidth: 2, borderColor: '#fff', shadowColor: '#000', shadowOpacity: 0.4, shadowRadius: 0, shadowOffset: { width: 0, height: 0 }, elevation: 3 },
-  osm: { position: 'absolute', left: 6, top: 6, backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  nomPort: { backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 5, paddingHorizontal: 4, paddingVertical: 1, maxWidth: 92 },
+  legende: { position: 'absolute', left: 6, bottom: 6, backgroundColor: 'rgba(255,255,255,0.94)', borderRadius: 10, padding: 8, gap: 5 },
+  ligneLeg: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  pt: { backgroundColor: c.marine, borderWidth: 2, borderColor: '#fff' },
+  txtLeg: { fontSize: 11 },
+  osm: { position: 'absolute', right: 6, top: 6, backgroundColor: 'rgba(255,255,255,0.85)', borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
   volet: { backgroundColor: c.fond, borderTopLeftRadius: 18, borderTopRightRadius: 18, padding: 16, paddingTop: 14, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 12, elevation: 6 },
   mini: { borderWidth: 1, borderColor: c.ligne, borderRadius: 14, padding: 12, gap: 6 },
 });
