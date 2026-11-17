@@ -1,16 +1,25 @@
 # Dependabot : alerte et propose une mise à jour quand une bibliothèque utilisée a une faille connue.
+# Les changements de version majeure (ex. Expo 52 → 53) sont ignorés : ils demandent une migration
+# testée à la main ; les correctifs de sécurité restent proposés.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /app
-    schedule:
-      interval: weekly
-      day: monday
+    schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 5
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     groups:
       expo:
-        patterns: ["expo*", "@expo/*", "react-native*", "@react-native*"]
+        patterns: ["expo*", "@expo/*", "react-native*", "@react-native*", "react", "react-dom", "@types/react"]
+  - package-ecosystem: npm
+    directory: /app/firebase/functions
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 3
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
-    schedule:
-      interval: monthly
+    schedule: { interval: monthly }
