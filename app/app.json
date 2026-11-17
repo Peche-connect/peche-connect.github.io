@@ -11,13 +11,18 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "fr.pecheconnect.app"
+      "package": "fr.pecheconnect.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icones/adaptive-icon.png",
+        "backgroundColor": "#12355b"
+      }
     },
     "web": {
       "bundler": "metro",
       "output": "single",
       "name": "Pêche Connect",
-      "themeColor": "#12355b"
+      "themeColor": "#12355b",
+      "favicon": "./assets/icones/favicon.png"
     },
     "plugins": [
       "expo-router"
@@ -25,6 +30,12 @@
     "experiments": {
       "typedRoutes": false,
       "baseUrl": ""
+    },
+    "icon": "./assets/icones/icon.png",
+    "splash": {
+      "image": "./assets/icones/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#12355b"
     }
   }
 }

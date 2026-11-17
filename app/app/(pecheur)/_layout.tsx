@@ -14,7 +14,7 @@ export default function OngletsPecheur() {
   return (
     <Tabs screenOptions={{
       headerShown: false, tabBarActiveTintColor: c.marine, tabBarInactiveTintColor: c.gris,
-      tabBarLabelStyle: { fontFamily: f.gras, fontSize: 12, lineHeight: 16 },
+      tabBarLabelStyle: { fontFamily: f.gras, fontSize: 12, lineHeight: 18, height: 20, overflow: 'visible' },
       tabBarBadgeStyle: { backgroundColor: c.accent, color: c.surAccent, fontFamily: f.tresGras, fontSize: 11 },
       sceneStyle: { backgroundColor: c.fond },
       tabBarStyle: { height: 74, paddingTop: 6, paddingBottom: 14, backgroundColor: c.fond, borderTopColor: c.ligne },
