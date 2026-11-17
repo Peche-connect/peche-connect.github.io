@@ -5,3 +5,4 @@ export { publierArrivage } from './arrivages';
 export { stripeWebhook } from './stripeWebhook';
 export { demandeCreee, messageCree } from './messages';
 export { taches } from './taches';
+export { coupeCircuit } from './coupeCircuit';

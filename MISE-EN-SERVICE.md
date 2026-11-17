@@ -26,6 +26,12 @@ société (ex. pecheconnect.martinique@gmail.com) avec la **validation en deux �
    Paramètres > Domaines autorisés : ajouter `peche-connect.fr` et l'adresse Cloudflare (`peche-connect.pages.dev`).
 6. **Paramètres du projet > Vos applications > Web (</>)** : nom « Pêche Connect », puis copier la
    configuration (apiKey, appId…) : elle va à Claude à l'étape 4.
+7. **App Check** (anti-robots) → application Web → fournisseur **reCAPTCHA Enterprise** → créer la clé de
+   site pour `peche-connect.fr` → la noter pour Claude. Puis, **une fois le site en ligne et testé**, activer
+   l'**application** (Enforce) pour Firestore, Storage et Authentication. Les fonctions serveur l'exigent déjà.
+8. **Authentication > Paramètres** : activer la **protection contre l'énumération des adresses e-mail**.
+9. **Utilisateurs et autorisations** : ajouter Louis comme second **propriétaire**, chacun avec la
+   validation en deux étapes (idéalement une clé de sécurité physique), pour ne jamais être bloqués.
 
 ## 2. Stripe (30 min)
 
@@ -83,16 +89,44 @@ enregistrements MX, SPF et DKIM que Zoho affiche → créer `contact@peche-conne
 - Fermetures : lambi et langouste déjà bloqués ; zones chlordécone dans **Firestore > fermetures**
   (`espece`, `debut` « MM-JJ », `fin`, `motif`, `port`).
 
-## 8. Sécurité et sauvegardes
+## 8. Coupe-circuit de facture (10 min, indispensable)
 
-- Validation en deux étapes sur **tous** les comptes (Gmail, Firebase, Stripe, Cloudflare, GitHub, Zoho, IONOS).
-- Firestore > **Sauvegardes** : activer une sauvegarde quotidienne (quelques centimes par mois) et tester
-  une restauration une fois par trimestre.
+Firebase n'a pas de plafond automatique : un robot ou une erreur pourrait faire grimper la facture.
+1. Google Cloud > **Facturation > Budgets et alertes** : budget « Alerte » à **10 €/mois** (e-mails à 50, 90, 100 %).
+2. Second budget nommé exactement **« Plafond Pêche Connect »** à **50 €/mois** → *Gérer les notifications* →
+   **Associer un sujet Pub/Sub** : créer le sujet `alertes-budget`.
+3. **IAM** : donner au compte de service des fonctions (`<numéro>-compute@developer.gserviceaccount.com`) le
+   rôle **Gestionnaire de facturation du projet**. La fonction `coupeCircuit` coupe alors la facturation dès
+   que le plafond est atteint (le site s'arrête, la facture aussi ; on relance à la main après analyse).
+
+## 9. Surveillance et sauvegardes
+
+- **Alerte sécurité par e-mail** : Google Cloud > Logging > *Créer une alerte basée sur les journaux*,
+  requête `textPayload:"ALERTE_SECURITE" OR jsonPayload.message:"ALERTE_SECURITE"`, notification par
+  e-mail aux deux associés. Elle se déclenche sur : faux paiement Stripe rejeté, faux QR, messages en rafale,
+  robot qui insiste, plafond de dépense atteint.
+- **Alerte erreurs** : même chose avec `severity>=ERROR` sur les fonctions (`resource.type="cloud_run_revision"`).
+- **Sauvegarde quotidienne de la base** (gardée 7 jours), une commande dans Google Cloud Shell :
+  `gcloud firestore backups schedules create --database='(default)' --recurrence=daily --retention=7d`
+- **Restauration** (à tester une fois par trimestre, dans une base à part, sans toucher à la vraie) :
+  `gcloud firestore backups list` puis
+  `gcloud firestore databases restore --source-backup=<nom de la sauvegarde> --destination-database=restauration-test`
+- Fichiers (photos, vocaux) : la suppression douce de Cloud Storage garde les fichiers effacés 7 jours.
 - **Journal** des événements de sécurité : collection `journal` (webhooks rejetés, faux QR, inscriptions à vérifier).
+- Validation en deux étapes sur **tous** les comptes (Gmail, Firebase, Stripe, Cloudflare, GitHub, Zoho, IONOS).
 - GitHub > Settings > Code security : *Dependabot alerts* et *Secret scanning* activés.
 - En cas de fuite de données : prévenir la CNIL sous 72 h.
 
+## 10. Avant de publier l'appli sur l'App Store et Google Play
+
+App Check pour l'appli installée (App Attest sur iPhone, Play Integrity sur Android) et connexion
+Google / Apple natives : à brancher avec la fabrication des applis (EAS). Tant que ce n'est pas fait,
+les fonctions serveur refusent les appels de l'appli installée : c'est voulu.
+
 ## Avant d'ouvrir au public
 
-Compléter les crochets […] des pages légales (`app/src/legal.ts`), désigner un médiateur de la
-consommation, fixer montants et règles d'annulation, faire relire les textes.
+- Compléter les crochets […] des pages légales (`app/src/legal.ts`), désigner un médiateur de la
+  consommation, fixer montants et règles d'annulation, faire relire les textes.
+- Signer les contrats de traitement des données (Google Cloud / Firebase, Stripe, Cloudflare : à accepter
+  dans leurs consoles) et tenir le registre des traitements (modèle CNIL).
+- Faire faire un **audit de sécurité par un professionnel** (test d'intrusion) : c'est la seule garantie extérieure.

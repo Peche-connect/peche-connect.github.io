@@ -1,7 +1,7 @@
 // À chaque nouveau message : numéros de téléphone masqués (anti-contournement), conversation marquée
 // « non lue » pour l'autre personne, notification sur son téléphone.
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
-import { db, FieldValue, journal, REGION, Timestamp } from './commun';
+import { db, FieldValue, REGION, Timestamp, alerte } from './commun';
 import { notifier } from './notifier';
 import { masquerNumeros } from './regles';
 
@@ -13,7 +13,7 @@ export const messageCree = onDocumentCreated({ region: REGION, document: 'conver
   const recents = await convRef.collection('messages').where('auteurId', '==', m.auteurId).where('creeLe', '>', Timestamp.fromMillis(Date.now() - 60_000)).count().get();
   if (recents.data().count > 20) {
     await ev.data!.ref.delete();
-    await journal(m.auteurId, 'messages en rafale bloqués', { conversation: ev.params.conv });
+    await alerte(m.auteurId, 'messages en rafale bloqués', { conversation: ev.params.conv });
     return;
   }
   if (typeof m.texte === 'string') {
@@ -40,6 +40,6 @@ export const demandeCreee = onDocumentCreated({ region: REGION, document: 'deman
   const ouvertes = await db.collection('demandes').where('proId', '==', d.proId).where('statut', '==', 'ouverte').count().get();
   if (ouvertes.data().count > 10) {
     await ev.data!.ref.update({ statut: 'annulee' });
-    await journal(d.proId, 'trop de besoins ouverts : besoin annulé', { id: ev.params.id });
+    await alerte(d.proId, 'trop de besoins ouverts : besoin annulé', { id: ev.params.id });
   }
 });

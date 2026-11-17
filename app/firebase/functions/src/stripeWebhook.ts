@@ -2,7 +2,7 @@
 // SÉCURITÉ : chaque message est vérifié avec sa signature ; un faux « paiement réussi » est rejeté.
 import { onRequest } from 'firebase-functions/v2/https';
 import Stripe from 'stripe';
-import { db, FieldValue, journal, QR_SECRET, REGION, stripe, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_CONNECT, Timestamp } from './commun';
+import { db, FieldValue, QR_SECRET, REGION, stripe, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_CONNECT, Timestamp, alerte } from './commun';
 import { notifier } from './notifier';
 import { signerBon } from './regles';
 import { annulerBon, ouvrirConversation } from './reservations';
@@ -23,7 +23,7 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
     if (req.method !== 'POST' || !sig) throw new Error('pas de signature');
     ev = verifier(req.rawBody, sig);
   } catch (e) {
-    await journal(null, 'webhook stripe rejeté', { raison: String(e), ip: req.ip ?? null });
+    await alerte(null, 'webhook stripe rejeté', { raison: String(e), ip: req.ip ?? null });
     res.status(400).send('Signature invalide');
     return;
   }

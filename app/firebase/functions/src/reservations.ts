@@ -1,7 +1,7 @@
 // Réservations : panier vérifié côté serveur, empreinte bancaire Stripe, QR signé, pesée et encaissement
 // du poids réel, commandes des pros (besoins).
 import { onCall } from 'firebase-functions/v2/https';
-import { centimes, connecte, db, erreur, FieldValue, journal, QR_SECRET, reglages, site, stripe, STRIPE_SECRET_KEY, APPEL, limiter } from './commun';
+import { centimes, connecte, db, erreur, FieldValue, journal, QR_SECRET, reglages, site, stripe, STRIPE_SECRET_KEY, APPEL, limiter, alerte } from './commun';
 import { notifier } from './notifier';
 import { montantBloque, montantsPesee, signatureValide } from './regles';
 
@@ -136,7 +136,7 @@ export const verifierBon = onCall({ ...APPEL, secrets: [QR_SECRET] }, async (req
   const { code, signature } = req.data as { code: string; signature: string };
   const b = (await db.doc('bons/' + String(code)).get()).data();
   if (!b || !signatureValide(QR_SECRET.value(), b.code, b.code, String(signature ?? ''))) {
-    await journal(uid, 'QR invalide scanné', { code });
+    await alerte(uid, 'QR invalide scanné', { code });
     throw erreur('invalid-argument', 'QR code non valable : ce bon n’a pas été émis par Pêche Connect.');
   }
   if (b.pecheurId !== uid) throw erreur('permission-denied', 'Ce bon est pour un autre pêcheur.');

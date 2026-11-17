@@ -1,6 +1,7 @@
 // Tests des règles métier (sans base) : npm run test:unitaires
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
+import { doitCouper } from '../coupeCircuit';
 import { fermetureActive, FERMETURES_CONNUES, masquerNumeros, montantBloque, montantsPesee, signatureValide, signerBon } from '../regles';
 
 const r = { fraisService: 0.9, commissionPct: 0.05, margeEmpreinte: 0.1 };
@@ -35,4 +36,11 @@ test('fermetures lambi et langouste', () => {
   assert.equal(fermetureActive(FERMETURES_CONNUES, 'Thon jaune', 'Le Robert', j(3, 15)), null);
   assert.ok(fermetureActive([{ espece: 'Colas', debut: '11-01', fin: '02-28', motif: 'zone', port: 'Trinité' }], 'Colas', 'Trinité', j(1, 10)));
   assert.equal(fermetureActive([{ espece: 'Colas', debut: '11-01', fin: '02-28', motif: 'zone', port: 'Trinité' }], 'Colas', 'Le Robert', j(1, 10)), null);
+});
+
+test('coupe-circuit : seulement le budget « plafond », seulement une fois atteint', () => {
+  assert.equal(doitCouper({ budgetDisplayName: 'Plafond Pêche Connect', costAmount: 50.2, budgetAmount: 50 }), true);
+  assert.equal(doitCouper({ budgetDisplayName: 'Plafond Pêche Connect', costAmount: 49, budgetAmount: 50 }), false);
+  assert.equal(doitCouper({ budgetDisplayName: 'Alerte 10 €', costAmount: 80, budgetAmount: 10 }), false);
+  assert.equal(doitCouper({}), false);
 });

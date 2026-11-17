@@ -2,6 +2,7 @@
 // Les clés secrètes sont des « secrets » Firebase (firebase functions:secrets:set …), jamais dans le code.
 import { initializeApp } from 'firebase-admin/app';
 import { FieldValue, getFirestore, Timestamp } from 'firebase-admin/firestore';
+import { logger } from 'firebase-functions';
 import { defineSecret, defineString } from 'firebase-functions/params';
 import { HttpsError, type CallableRequest } from 'firebase-functions/v2/https';
 import Stripe from 'stripe';
@@ -58,6 +59,12 @@ export async function reglages(): Promise<Reglages> {
 export async function journal(qui: string | null, quoi: string, details?: unknown) {
   await db.collection('journal').add({ quand: FieldValue.serverTimestamp(), qui, quoi, details: details ?? null });
 }
+// Événement de sécurité : gardé dans le journal ET écrit dans les journaux Google avec le mot
+// « ALERTE_SECURITE », qui déclenche un e-mail aux associés (alerte Cloud Monitoring, voir MISE-EN-SERVICE.md)
+export async function alerte(qui: string | null, quoi: string, details?: unknown) {
+  logger.warn('ALERTE_SECURITE ' + quoi, { qui, details: details ?? null });
+  await journal(qui, quoi, details);
+}
 
 // La Martinique est à UTC−4 toute l'année
 export const maintenantMartinique = () => { const d = new Date(); return (((d.getUTCHours() - 4) * 60 + d.getUTCMinutes()) % 1440 + 1440) % 1440; };
@@ -68,7 +75,7 @@ export async function limiter(uid: string, action: string, max: number, fenetreS
   const maintenant = Date.now();
   await db.runTransaction(async (t) => {
     const recents = (((await t.get(ref)).data()?.horodatages ?? []) as number[]).filter((x) => x > maintenant - fenetreSec * 1000);
-    if (recents.length >= max) throw erreur('resource-exhausted', 'Trop de demandes en peu de temps. Réessayez dans quelques minutes.');
+    if (recents.length >= max) { logger.warn('ALERTE_SECURITE cadence dépassée', { uid, action }); throw erreur('resource-exhausted', 'Trop de demandes en peu de temps. Réessayez dans quelques minutes.'); }
     t.set(ref, { horodatages: [...recents, maintenant], maj: FieldValue.serverTimestamp() });
   });
 }
