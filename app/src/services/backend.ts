@@ -1,221 +1,262 @@
-// Liaison avec le serveur (Supabase + fonctions Stripe). Utilisé seulement en mode réel, c'est-à-dire
-// quand EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY sont renseignées (voir .env.example).
-// La clé « anon » est publique par nature : la sécurité est assurée par les règles d'accès de la base
-// (supabase/migrations). Aucune clé secrète (Stripe, service_role) ne doit apparaître ici.
+// Liaison avec le serveur Firebase (connexion, base Firestore, fichiers, fonctions serveur Stripe).
+// Utilisé seulement en mode réel, c'est-à-dire quand les clés EXPO_PUBLIC_FIREBASE_* sont renseignées
+// (voir .env.example). Ces clés sont publiques par nature : la sécurité vient des règles d'accès
+// (app/firebase/firestore.rules et storage.rules) et des fonctions serveur. Aucune clé secrète ici.
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
-import * as Linking from 'expo-linking';
+import { getApp, getApps, initializeApp } from 'firebase/app';
+import {
+  connectAuthEmulator, getAuth, GoogleAuthProvider, initializeAuth, isSignInWithEmailLink, OAuthProvider, onAuthStateChanged,
+  sendSignInLinkToEmail, signInWithEmailLink, signInWithPopup, signInWithRedirect, signOut, type Auth, type User,
+} from 'firebase/auth';
+import {
+  addDoc, arrayRemove, arrayUnion, collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, onSnapshot, orderBy,
+  query, serverTimestamp, Timestamp, updateDoc, where, type Firestore, type Unsubscribe,
+} from 'firebase/firestore';
+import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions } from 'firebase/functions';
+import { connectStorageEmulator, getBlob, getDownloadURL, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
 import type { Bon, Conversation, Demande, Etal, InfosPro, LignePanier, Message, Session } from '../types';
 
-const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-const CLE = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
-export const CONNEXION_SMS = process.env.EXPO_PUBLIC_CONNEXION_SMS === '1';
+const CONFIG = {
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '',
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? '',
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET ?? '',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '',
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID ?? '',
+};
+const EMULATEUR = process.env.EXPO_PUBLIC_FIREBASE_EMULATEUR ?? ''; // tests automatiques : « 127.0.0.1 »
+const SITE = (process.env.EXPO_PUBLIC_SITE_URL ?? 'https://peche-connect.fr').replace(/\/$/, '');
 export const CONNEXION_GOOGLE = process.env.EXPO_PUBLIC_CONNEXION_GOOGLE !== '0';
+export const CONNEXION_APPLE = process.env.EXPO_PUBLIC_CONNEXION_APPLE === '1';
+export const CONNEXION_EMAIL = process.env.EXPO_PUBLIC_CONNEXION_EMAIL !== '0';
 
-let client: SupabaseClient | null = null;
-export function sb(): SupabaseClient {
-  if (!client) {
-    client = createClient(SUPABASE_URL, CLE, {
-      auth: {
-        storage: Platform.OS === 'web' ? undefined : AsyncStorage,
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: Platform.OS === 'web',
-        flowType: 'pkce',
-      },
-    });
+let _auth: Auth, _db: Firestore, _fn: Functions, _st: FirebaseStorage;
+function init() {
+  if (_db) return;
+  const app = getApps().length ? getApp() : initializeApp(CONFIG);
+  if (Platform.OS === 'web') _auth = getAuth(app);
+  else {
+    // appli installée : la session est gardée dans le téléphone
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { getReactNativePersistence } = require('firebase/auth') as { getReactNativePersistence: (s: unknown) => never };
+    _auth = initializeAuth(app, { persistence: getReactNativePersistence(AsyncStorage) });
   }
-  return client;
+  _auth.languageCode = 'fr';
+  _db = getFirestore(app);
+  _fn = getFunctions(app, 'europe-west9');
+  _st = getStorage(app);
+  if (EMULATEUR) {
+    connectAuthEmulator(_auth, 'http://' + EMULATEUR + ':9099', { disableWarnings: true });
+    connectFirestoreEmulator(_db, EMULATEUR, 8080);
+    connectFunctionsEmulator(_fn, EMULATEUR, 5001);
+    connectStorageEmulator(_st, EMULATEUR, 9199);
+  }
 }
+const auth = () => (init(), _auth);
+const db = () => (init(), _db);
 
 export class ErreurServeur extends Error {}
-
-async function fonction<T>(nom: string, corps: Record<string, unknown>): Promise<T> {
-  const { data, error } = await sb().functions.invoke(nom, { body: corps });
-  if (error) {
-    // message lisible renvoyé par la fonction (« Plus assez de thon… »)
-    let message = 'Le serveur ne répond pas. Vérifiez votre connexion.';
-    try { const j = await (error as { context?: Response }).context?.json(); if (j?.erreur) message = j.erreur; } catch { /* message par défaut */ }
-    throw new ErreurServeur(message);
-  }
-  return data as T;
-}
-
-const verif = <T,>(r: { data: T; error: { message: string } | null }) => {
-  if (r.error) {
-    const m = r.error.message;
-    if (/fetch|network|réseau/i.test(m)) throw new ErreurServeur('Pas de connexion au serveur. Vérifiez votre réseau puis réessayez.');
-    throw new ErreurServeur(/Vente fermée|Compte pêcheur/.test(m) ? m.replace(/^.*?(Vente fermée|Compte pêcheur)/, '$1') : 'Opération impossible : ' + m);
-  }
-  return r.data;
+const MESSAGES: Record<string, string> = {
+  'permission-denied': 'Action non autorisée.', unauthenticated: 'Session expirée, reconnectez-vous.', unavailable: 'Pas de connexion au serveur. Vérifiez votre réseau puis réessayez.',
+  'auth/network-request-failed': 'Pas de connexion au serveur. Vérifiez votre réseau puis réessayez.', 'auth/invalid-action-code': 'Ce lien de connexion a expiré ou a déjà servi. Demandez-en un nouveau.',
+  'auth/invalid-email': 'Adresse e-mail invalide.', 'auth/popup-closed-by-user': 'Connexion annulée.', 'auth/too-many-requests': 'Trop de tentatives. Réessayez dans quelques minutes.',
 };
+function lisible(e: unknown): ErreurServeur {
+  const x = e as { code?: string; message?: string };
+  const code = String(x?.code ?? '').replace(/^functions\//, '');
+  // les fonctions serveur renvoient déjà un message en français
+  if (x?.code?.startsWith('functions/') && !['internal', 'unavailable', 'unauthenticated'].includes(code) && x.message) return new ErreurServeur(x.message);
+  return new ErreurServeur(MESSAGES[code] ?? MESSAGES[x?.code ?? ''] ?? 'Erreur du serveur, réessayez dans un instant.');
+}
+async function fonction<T>(nom: string, data: Record<string, unknown>): Promise<T> {
+  init();
+  try { return (await httpsCallable<Record<string, unknown>, T>(_fn, nom)(data)).data; } catch (e) { throw lisible(e); }
+}
+async function essai<T>(f: () => Promise<T>): Promise<T> { try { return await f(); } catch (e) { throw e instanceof ErreurServeur ? e : lisible(e); } }
 
 // ───────── Heures : la Martinique est à UTC−4 toute l'année ─────────
-export const minutesMartinique = (d: Date | string | null | undefined) => {
-  if (!d) return 0;
-  const x = typeof d === 'string' ? new Date(d) : d;
+const versDate = (d: Date | string | Timestamp | null | undefined) => (!d ? null : d instanceof Timestamp ? d.toDate() : typeof d === 'string' ? new Date(d) : d);
+export const minutesMartinique = (d: Date | string | Timestamp | null | undefined) => {
+  const x = versDate(d); if (!x) return 0;
   return (((x.getUTCHours() - 4) * 60 + x.getUTCMinutes()) % 1440 + 1440) % 1440;
 };
 export const maintenantMartinique = () => minutesMartinique(new Date());
-const minutesHeure = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + (m || 0); };
 
-// ───────── Connexion ─────────
-export async function envoyerCodeSms(telephone: string) {
-  const r = await sb().auth.signInWithOtp({ phone: versInternational(telephone) });
-  if (r.error) throw new ErreurServeur(r.error.status === 429 ? 'Trop de codes demandés. Réessayez plus tard.' : 'Envoi du SMS impossible : ' + r.error.message);
-}
-export async function verifierCodeSms(telephone: string, code: string) {
-  const r = await sb().auth.verifyOtp({ phone: versInternational(telephone), token: code, type: 'sms' });
-  if (r.error) throw new ErreurServeur('Code incorrect ou expiré.');
-}
-// 0696 12 34 56 → +596696123456 (Martinique) ; 06… → +336…
-export function versInternational(t: string) {
-  const c = t.replace(/[^\d+]/g, '');
-  if (c.startsWith('+')) return c;
-  if (/^0(696|697|596)/.test(c)) return '+596' + c.slice(1);
-  if (/^0[67]/.test(c)) return '+33' + c.slice(1);
-  return '+' + c;
-}
-
+// ───────── Connexion : Google, Apple, ou lien reçu par e-mail (gratuits, sans SMS) ─────────
+const CLE_EMAIL = 'peche-connect-email-connexion';
 export async function connexionGoogle() {
-  const retour = Platform.OS === 'web' ? window.location.origin + '/' : Linking.createURL('/');
-  if (Platform.OS === 'web') {
-    const r = await sb().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: retour } });
-    if (r.error) throw new ErreurServeur('Connexion Google impossible.');
-    return; // la page part chez Google puis revient
+  if (Platform.OS !== 'web') throw new ErreurServeur('Dans l’appli installée, la connexion Google arrive avec la version App Store / Google Play.');
+  const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' });
+  try { await signInWithPopup(auth(), p); } catch (e) {
+    if ((e as { code?: string }).code === 'auth/popup-blocked') { await signInWithRedirect(auth(), p); return; }
+    throw lisible(e);
   }
-  const WebBrowser = await import('expo-web-browser');
-  const r = await sb().auth.signInWithOAuth({ provider: 'google', options: { redirectTo: retour, skipBrowserRedirect: true } });
-  if (r.error || !r.data.url) throw new ErreurServeur('Connexion Google impossible.');
-  const res = await WebBrowser.openAuthSessionAsync(r.data.url, retour);
-  if (res.type !== 'success') return;
-  const code = new URL(res.url).searchParams.get('code');
-  if (code) { const x = await sb().auth.exchangeCodeForSession(code); if (x.error) throw new ErreurServeur('Connexion Google impossible.'); }
 }
-
-export async function deconnexion() { await sb().auth.signOut(); }
+export async function connexionApple() {
+  if (Platform.OS !== 'web') throw new ErreurServeur('Dans l’appli installée, la connexion Apple arrive avec la version App Store.');
+  const p = new OAuthProvider('apple.com'); p.addScope('email'); p.addScope('name'); p.setCustomParameters({ locale: 'fr' });
+  try { await signInWithPopup(auth(), p); } catch (e) { throw lisible(e); }
+}
+export async function envoyerLienEmail(email: string) {
+  const adresse = email.trim().toLowerCase();
+  await essai(() => sendSignInLinkToEmail(auth(), adresse, { url: (Platform.OS === 'web' ? window.location.origin : SITE) + '/connexion', handleCodeInApp: true }));
+  await AsyncStorage.setItem(CLE_EMAIL, adresse);
+}
+// Au retour du lien reçu par e-mail : connexion automatique (demande l'adresse si autre appareil)
+export const estLienEmail = (url: string) => (init(), isSignInWithEmailLink(_auth, url));
+export async function terminerLienEmail(url: string, emailSaisi?: string) {
+  const email = emailSaisi?.trim().toLowerCase() || (await AsyncStorage.getItem(CLE_EMAIL));
+  if (!email) return false;
+  await essai(() => signInWithEmailLink(auth(), email, url));
+  await AsyncStorage.removeItem(CLE_EMAIL);
+  return true;
+}
+export async function deconnexion() { await signOut(auth()); }
 export function surChangementSession(f: (connecte: boolean) => void) {
-  return sb().auth.onAuthStateChange((_ev, s) => f(!!s)).data.subscription;
+  return { unsubscribe: onAuthStateChanged(auth(), (u) => f(!!u)) };
 }
 
 // ───────── Profil ─────────
-type LigneProfil = { id: string; role: 'client' | 'pro' | 'pecheur' | 'chauffeur' | 'admin'; prenom: string; telephone: string | null; commune: string | null };
+async function utilisateur(): Promise<User | null> { await auth().authStateReady(); return _auth.currentUser; }
+async function droits(rafraichir = false) {
+  const u = await utilisateur(); if (!u) return null;
+  return (await u.getIdTokenResult(rafraichir)).claims as { role?: string; etalId?: string; verifie?: boolean };
+}
 
 export async function chargerSession(): Promise<{ session: Session; profilIncomplet: boolean; uid: string | null }> {
-  const { data } = await sb().auth.getSession();
-  const u = data.session?.user;
+  const u = await utilisateur();
   if (!u) return { session: null, profilIncomplet: false, uid: null };
-  const p = verif(await sb().from('profils').select('*').eq('id', u.id).maybeSingle()) as LigneProfil | null;
-  if (!p || !p.prenom) return { session: null, profilIncomplet: true, uid: u.id };
-  const telephone = p.telephone ?? u.phone ?? '';
+  const p = (await essai(() => getDoc(doc(db(), 'profils', u.uid)))).data() as { role: string; prenom: string } | undefined;
+  if (!p?.prenom) return { session: null, profilIncomplet: true, uid: u.uid };
+  const base = { telephone: '', email: u.email ?? undefined, prenom: p.prenom };
   if (p.role === 'pecheur') {
-    const e = verif(await sb().from('etals').select('id, statut, stripe_pret').eq('pecheur_id', u.id).maybeSingle()) as { id: string; statut: string; stripe_pret: boolean } | null;
-    return { uid: u.id, profilIncomplet: false, session: { telephone, role: 'pecheur', prenom: p.prenom, etalId: e?.id, statutPecheur: e?.statut === 'verifie' ? 'verifie' : 'en_attente', stripePret: !!e?.stripe_pret } };
+    const c = await droits(true);
+    const e = c?.etalId ? (await essai(() => getDoc(doc(db(), 'etals', c.etalId!)))).data() : undefined;
+    return { uid: u.uid, profilIncomplet: false, session: { ...base, role: 'pecheur', etalId: c?.etalId, statutPecheur: e?.statut === 'verifie' ? 'verifie' : 'en_attente', stripePret: !!e?.stripePret } };
   }
   if (p.role === 'pro') {
-    const pro = verif(await sb().from('pros').select('*').eq('profil_id', u.id).maybeSingle()) as (InfosPro & { adresse: string | null }) | null;
-    if (!pro) return { session: null, profilIncomplet: true, uid: u.id };
-    return { uid: u.id, profilIncomplet: false, session: { telephone, role: 'client', prenom: p.prenom, pro: { raison: pro.raison, type: pro.type, siret: pro.siret, commune: pro.commune, adresse: pro.adresse ?? undefined } } };
+    const pro = (await essai(() => getDoc(doc(db(), 'pros', u.uid)))).data() as (InfosPro & { adresse: string | null }) | undefined;
+    if (!pro) return { session: null, profilIncomplet: true, uid: u.uid };
+    return { uid: u.uid, profilIncomplet: false, session: { ...base, role: 'client', pro: { raison: pro.raison, type: pro.type, siret: pro.siret, commune: pro.commune, adresse: pro.adresse ?? undefined } } };
   }
-  return { uid: u.id, profilIncomplet: false, session: { telephone, role: 'client', prenom: p.prenom } };
+  return { uid: u.uid, profilIncomplet: false, session: { ...base, role: 'client' } };
 }
 
-async function uid() {
-  const { data } = await sb().auth.getUser();
-  if (!data.user) throw new ErreurServeur('Session expirée, reconnectez-vous.');
-  return data.user.id;
+async function choisirRole(data: Record<string, unknown>) {
+  await fonction('choisirRole', data);
+  await droits(true); // relit les droits (rôle, étal) posés par le serveur
 }
-
-export async function enregistrerClient(prenom: string, commune?: string) {
-  const id = await uid();
-  verif(await sb().from('profils').update({ prenom, role: 'client', commune: commune ?? null }).eq('id', id));
-}
-export async function enregistrerPro(prenom: string, pro: InfosPro) {
-  const id = await uid();
-  verif(await sb().from('profils').update({ prenom, role: 'pro', commune: pro.commune }).eq('id', id));
-  verif(await sb().from('pros').upsert({ profil_id: id, raison: pro.raison, type: pro.type, siret: pro.siret, commune: pro.commune, adresse: pro.adresse ?? null }));
-}
-export async function inscrirePecheur(i: { prenom: string; port: string; bateau: string; immatriculation: string }) {
-  const id = await uid();
-  verif(await sb().from('profils').update({ prenom: i.prenom, role: 'pecheur', commune: i.port }).eq('id', id));
-  const e = verif(await sb().from('etals').upsert({ pecheur_id: id, prenom: i.prenom, port: i.port, bateau: i.bateau }, { onConflict: 'pecheur_id' }).select('id').single()) as { id: string };
-  verif(await sb().from('etals_prive').upsert({ etal_id: e.id, immatriculation: i.immatriculation, lieu: 'Débarcadère de ' + i.port }));
-}
+export const enregistrerClient = (prenom: string, commune?: string) => choisirRole({ role: 'client', prenom, commune: commune ?? null });
+export const enregistrerPro = (prenom: string, pro: InfosPro) => choisirRole({ role: 'pro', prenom, pro: { ...pro, adresse: pro.adresse ?? '' } });
+export const inscrirePecheur = (i: { prenom: string; port: string; bateau: string; immatriculation: string }) =>
+  choisirRole({ role: 'pecheur', prenom: i.prenom, pecheur: { port: i.port, bateau: i.bateau, immatriculation: i.immatriculation } });
 
 // ───────── Lecture des données ─────────
-type LigneEtal = { id: string; prenom: string; port: string; note: number; avis: number; bateau: string; photo_url: string | null; debarque_le: string | null; limite_retrait: string; produits: { id: string; espece: string; prix_kg: number; dispo_kg: number; preparations: { nom: string; supplementKg: number }[] }[] };
+type DocEtal = { prenom: string; port: string; note: number; avis: number; bateau: string; photoUrl: string | null; debarqueLe: Timestamp | null; limiteRetrait: number; produits: Etal['produits']; pecheurId: string };
+const versEtal = (id: string, e: DocEtal, prive?: { lieu?: string; precision?: string }): Etal => ({
+  id, pecheur: e.prenom, port: e.port, note: Number(e.note ?? 5), avis: e.avis ?? 0, bateau: e.bateau ?? '', photo: e.photoUrl ?? undefined,
+  debarque: e.debarqueLe ? minutesMartinique(e.debarqueLe) : -600, limiteRetrait: e.limiteRetrait ?? 720,
+  lieu: prive?.lieu || undefined, precision: prive?.precision || undefined, produits: e.produits ?? [],
+});
 
-export async function chargerEtals(): Promise<Etal[]> {
-  const etals = verif(await sb().from('etals').select('id, prenom, port, note, avis, bateau, photo_url, debarque_le, limite_retrait, produits(id, espece, prix_kg, dispo_kg, preparations)')) as LigneEtal[];
-  // adresses exactes : seulement celles que les règles d'accès autorisent (étal du pêcheur, bons payés)
-  const prives = verif(await sb().from('etals_prive').select('etal_id, lieu, precision')) as { etal_id: string; lieu: string | null; precision: string | null }[];
-  return etals.map((e) => {
-    const p = prives.find((x) => x.etal_id === e.id);
-    return {
-      id: e.id, pecheur: e.prenom, port: e.port, note: Number(e.note), avis: e.avis, bateau: e.bateau, photo: e.photo_url ?? undefined,
-      debarque: e.debarque_le ? minutesMartinique(e.debarque_le) : -600, limiteRetrait: minutesHeure(e.limite_retrait),
-      lieu: p?.lieu ?? undefined, precision: p?.precision ?? undefined,
-      produits: e.produits.map((x) => ({ id: x.id, espece: x.espece, prixKg: Number(x.prix_kg), dispoKg: Number(x.dispo_kg), preparations: x.preparations })),
-    };
-  });
+// Étals visibles ; adresse exacte seulement pour son propre étal et ceux où l'on a un bon payé
+export async function chargerEtals(avecAdresse: string[] = []): Promise<Etal[]> {
+  const q = await essai(() => getDocs(query(collection(db(), 'etals'), where('statut', '==', 'verifie'), where('stripePret', '==', true))));
+  const etals = new Map(q.docs.map((d) => [d.id, d.data() as DocEtal]));
+  const c = await droits();
+  if (c?.etalId && !etals.has(c.etalId)) { const mien = await getDoc(doc(db(), 'etals', c.etalId)); if (mien.exists()) etals.set(mien.id, mien.data() as DocEtal); }
+  const ids = [...new Set([...avecAdresse, ...(c?.etalId ? [c.etalId] : [])])];
+  const prives = new Map<string, { lieu?: string; precision?: string }>();
+  await Promise.all(ids.map(async (id) => { try { const p = await getDoc(doc(db(), 'etals', id, 'prive', 'infos')); if (p.exists()) prives.set(id, p.data()); } catch { /* pas d'accès */ } }));
+  // étals où j'ai un bon mais qui ne sont plus en vitrine (le bon doit rester affichable)
+  await Promise.all(avecAdresse.filter((id) => !etals.has(id)).map(async (id) => { try { const d = await getDoc(doc(db(), 'etals', id)); if (d.exists()) etals.set(id, d.data() as DocEtal); } catch { /* étal masqué */ } }));
+  return [...etals].map(([id, e]) => versEtal(id, e, prives.get(id)));
 }
 
-type LigneBon = { id: string; code: string; etal_id: string; client_id: string | null; client_prenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: LignePanier[]; creneau: string; statut: string; montant_bloque: number; montant_paye: number | null; cree_le: string };
-
+type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null };
 export async function chargerBons(moi: string): Promise<Bon[]> {
-  const bons = verif(await sb().from('bons').select('id, code, etal_id, client_id, client_prenom, pro, livraison, lignes, creneau, statut, montant_bloque, montant_paye, cree_le').neq('statut', 'annule').order('cree_le')) as LigneBon[];
-  return bons.map((b) => ({
-    code: b.code, etalId: b.etal_id, client: b.client_id === moi ? 'Vous' : b.client_prenom, pro: b.pro ?? undefined, livraison: b.livraison ?? undefined,
-    lignes: b.lignes, creneau: b.creneau, montantBloque: Number(b.montant_bloque), montantPaye: b.montant_paye == null ? undefined : Number(b.montant_paye),
-    statut: b.statut === 'retire' ? 'retire' : b.statut === 'en_attente_paiement' ? 'a_payer' : 'reserve', creeLe: minutesMartinique(b.cree_le), date: b.cree_le,
-  }));
+  const c = await droits();
+  const qs = [query(collection(db(), 'bons'), where('clientId', '==', moi))];
+  if (c?.role === 'pecheur') qs.push(query(collection(db(), 'bons'), where('pecheurId', '==', moi)));
+  const docs = (await Promise.all(qs.map((q) => essai(() => getDocs(q))))).flatMap((r) => r.docs.map((d) => d.data() as DocBon));
+  const vus = new Set<string>();
+  return docs.filter((b) => b.statut !== 'annule' && !vus.has(b.code) && !!vus.add(b.code))
+    .sort((a, b) => (a.creeLe?.toMillis() ?? 0) - (b.creeLe?.toMillis() ?? 0))
+    .map((b) => ({
+      code: b.code, etalId: b.etalId, client: b.clientId === moi ? 'Vous' : b.clientPrenom, pro: b.pro ?? undefined, livraison: b.livraison ?? undefined,
+      lignes: b.lignes.map((l) => ({ ...l, produitId: l.produitId ?? 'commande' })), creneau: b.creneau, montantBloque: Number(b.montantBloque),
+      montantPaye: b.montantPaye == null ? undefined : Number(b.montantPaye),
+      statut: b.statut === 'retire' ? 'retire' : b.statut === 'en_attente_paiement' ? 'a_payer' : 'reserve',
+      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(),
+    }));
 }
 
-type LigneConv = { id: string; etal_id: string; client_id: string; client_prenom: string; bon_code: string | null; lu_client: boolean; lu_pecheur: boolean; messages: { id: string; auteur: Message['auteur']; texte: string | null; position: Message['position'] | null; audio: { chemin: string; duree: number } | null; cree_le: string }[] };
-
+type DocMessage = { auteur: Message['auteur']; texte?: string; position?: Message['position']; audio?: { chemin: string; duree: number }; creeLe: Timestamp | null };
 export async function chargerConversations(moi: string): Promise<Record<string, Conversation>> {
-  const convs = verif(await sb().from('conversations').select('id, etal_id, client_id, client_prenom, bon_code, lu_client, lu_pecheur, messages(id, auteur, texte, position, audio, cree_le)').order('cree_le', { referencedTable: 'messages' })) as LigneConv[];
-  // messages vocaux : dossier privé, liens d'écoute temporaires (1 h)
-  const chemins = convs.flatMap((c) => c.messages.filter((m) => m.audio).map((m) => m.audio!.chemin));
-  const liens: Record<string, string> = {};
-  if (chemins.length) {
-    const { data } = await sb().storage.from('messages-audio').createSignedUrls(chemins, 3600);
-    (data ?? []).forEach((d) => { if (d.path && d.signedUrl) liens[d.path] = d.signedUrl; });
-  }
+  const q = await essai(() => getDocs(query(collection(db(), 'conversations'), where('participants', 'array-contains', moi))));
   const r: Record<string, Conversation> = {};
-  for (const c of convs) {
-    const jeSuisClient = c.client_id === moi;
-    const id = c.etal_id + '|' + (jeSuisClient ? 'Vous' : c.id);
+  await Promise.all(q.docs.map(async (d) => {
+    const c = d.data() as { etalId: string; clientId: string; clientPrenom: string; bonCode: string; luClient: boolean; luPecheur: boolean };
+    const msgs = await getDocs(query(collection(db(), 'conversations', d.id, 'messages'), orderBy('creeLe')));
+    const jeSuisClient = c.clientId === moi;
+    const id = c.etalId + '|' + (jeSuisClient ? 'Vous' : d.id);
     r[id] = {
-      id, uuid: c.id, etalId: c.etal_id, client: jeSuisClient ? 'Vous' : c.client_prenom, bon: c.bon_code ?? '', luClient: c.lu_client, luPecheur: c.lu_pecheur,
-      messages: c.messages.map((m) => ({ id: m.id, auteur: m.auteur, texte: m.texte ?? undefined, position: m.position ?? undefined, audio: m.audio && liens[m.audio.chemin] ? { uri: liens[m.audio.chemin], duree: m.audio.duree } : undefined, heure: minutesMartinique(m.cree_le) })),
+      id, uuid: d.id, etalId: c.etalId, client: jeSuisClient ? 'Vous' : c.clientPrenom, bon: c.bonCode ?? '', luClient: c.luClient, luPecheur: c.luPecheur,
+      messages: msgs.docs.map((m) => {
+        const x = m.data() as DocMessage;
+        // message vocal : « fb: » + emplacement, téléchargé seulement au moment de l'écoute
+        return { id: m.id, auteur: x.auteur, texte: x.texte, position: x.position, audio: x.audio ? { uri: 'fb:' + x.audio.chemin, duree: x.audio.duree } : undefined, heure: minutesMartinique(x.creeLe ?? new Date()) };
+      }),
     };
-  }
+  }));
   return r;
 }
 
-type LigneDemande = { id: string; pro_id: string; pro_raison: string; pro_type: InfosPro['type']; pro_commune: string; espece: string; kg: number; prix_max_kg: number; pour: Demande['pour']; note: string | null; livraison: Demande['livraison'] | null; statut: Demande['statut']; etal_id: string | null; bon_code: string | null; cree_le: string };
-
+type DocDemande = { proId: string; proRaison: string; proType: InfosPro['type']; proCommune: string; espece: string; kg: number; prixMaxKg: number; pour: Demande['pour']; note?: string; livraison?: Demande['livraison']; statut: Demande['statut']; etalId?: string; bonCode?: string; creeLe: Timestamp | null };
 export async function chargerDemandes(moi: string): Promise<Demande[]> {
-  const d = verif(await sb().from('demandes').select('*').neq('statut', 'annulee').order('cree_le', { ascending: false })) as LigneDemande[];
-  return d.map((x) => ({
-    id: x.id, auteur: x.pro_id === moi ? 'Vous' : x.pro_raison, pro: { raison: x.pro_raison, type: x.pro_type, siret: '', commune: x.pro_commune },
-    espece: x.espece, kg: Number(x.kg), prixMaxKg: Number(x.prix_max_kg), pour: x.pour, note: x.note ?? undefined, livraison: x.livraison ?? undefined,
-    statut: x.statut, etalId: x.etal_id ?? undefined, bon: x.bon_code ?? undefined, creeLe: minutesMartinique(x.cree_le),
-  }));
+  const c = await droits();
+  const qs = [];
+  if (c?.role === 'pro') qs.push(query(collection(db(), 'demandes'), where('proId', '==', moi)));
+  if (c?.role === 'pecheur' && c.verifie) qs.push(query(collection(db(), 'demandes'), where('statut', '==', 'ouverte')));
+  if (c?.role === 'pecheur' && c.etalId) qs.push(query(collection(db(), 'demandes'), where('etalId', '==', c.etalId)));
+  const docs = (await Promise.all(qs.map((q) => essai(() => getDocs(q))))).flatMap((r) => r.docs);
+  const vus = new Set<string>();
+  return docs.filter((d) => !vus.has(d.id) && !!vus.add(d.id)).map((d) => ({ id: d.id, ...(d.data() as DocDemande) }))
+    .filter((x) => x.statut !== 'annulee').sort((a, b) => (b.creeLe?.toMillis() ?? 0) - (a.creeLe?.toMillis() ?? 0))
+    .map((x) => ({
+      id: x.id, auteur: x.proId === moi ? 'Vous' : x.proRaison, pro: { raison: x.proRaison, type: x.proType, siret: '', commune: x.proCommune },
+      espece: x.espece, kg: Number(x.kg), prixMaxKg: Number(x.prixMaxKg), pour: x.pour, note: x.note, livraison: x.livraison,
+      statut: x.statut, etalId: x.etalId, bon: x.bonCode, creeLe: minutesMartinique(x.creeLe ?? new Date()),
+    }));
+}
+export async function especesSuivies() {
+  const u = await utilisateur(); if (!u) return [];
+  return ((await getDoc(doc(db(), 'profils', u.uid))).data()?.suivis ?? []) as string[];
 }
 
-// Temps réel : la fonction est appelée dès qu'une donnée change (nouveau message, bon payé, arrivage…)
+// Temps réel : la fonction est appelée dès qu'une donnée change (message, bon payé, arrivage…)
 export function ecouterChangements(f: () => void): () => void {
   let minuteur: ReturnType<typeof setTimeout> | null = null;
-  const plusTard = () => { if (minuteur) clearTimeout(minuteur); minuteur = setTimeout(f, 300); };
-  const canal: RealtimeChannel = sb().channel('changements');
-  for (const table of ['messages', 'conversations', 'bons', 'produits', 'demandes']) {
-    canal.on('postgres_changes', { event: '*', schema: 'public', table }, plusTard);
-  }
-  canal.subscribe();
-  return () => { sb().removeChannel(canal); };
+  const plusTard = () => { if (minuteur) clearTimeout(minuteur); minuteur = setTimeout(f, 400); };
+  let ecoutes: Unsubscribe[] = [];
+  const arreter = () => { ecoutes.forEach((u) => u()); ecoutes = []; };
+  const surErreur = () => { /* droits pas encore à jour : la prochaine connexion relancera l'écoute */ };
+  const fin = onAuthStateChanged(auth(), async (u) => {
+    arreter();
+    ecoutes.push(onSnapshot(query(collection(db(), 'etals'), where('statut', '==', 'verifie'), where('stripePret', '==', true)), plusTard, surErreur));
+    if (!u) return;
+    const c = await droits();
+    ecoutes.push(onSnapshot(query(collection(db(), 'conversations'), where('participants', 'array-contains', u.uid)), plusTard, surErreur));
+    ecoutes.push(onSnapshot(query(collection(db(), 'bons'), where('clientId', '==', u.uid)), plusTard, surErreur));
+    if (c?.role === 'pecheur') {
+      ecoutes.push(onSnapshot(query(collection(db(), 'bons'), where('pecheurId', '==', u.uid)), plusTard, surErreur));
+      if (c.etalId) ecoutes.push(onSnapshot(doc(db(), 'etals', c.etalId), plusTard, surErreur));
+      if (c.verifie) ecoutes.push(onSnapshot(query(collection(db(), 'demandes'), where('statut', '==', 'ouverte')), plusTard, surErreur));
+    }
+    if (c?.role === 'pro') ecoutes.push(onSnapshot(query(collection(db(), 'demandes'), where('proId', '==', u.uid)), plusTard, surErreur));
+  });
+  return () => { fin(); arreter(); };
 }
 
 // ───────── Actions ─────────
@@ -226,69 +267,76 @@ async function ouvrir(url: string) {
 }
 
 export async function reserver(etalId: string, lignes: LignePanier[], creneau: string, livraison: boolean) {
-  const r = await fonction<{ code: string; url: string }>('creer-reservation', {
+  const r = await fonction<{ code: string; url: string }>('creerReservation', {
     etalId, creneau, livraison, lignes: lignes.map((l) => ({ produitId: l.produitId, kg: l.kg, preparation: l.preparation })),
   });
   await ouvrir(r.url); // page de paiement sécurisée de Stripe (empreinte bancaire)
   return r.code;
 }
-export async function payerBon(code: string) { const r = await fonction<{ url: string }>('payer-bon', { code }); await ouvrir(r.url); }
-export const monQr = async (code: string) => verif(await sb().rpc('mon_qr', { p_code: code })) as string | null;
-export const verifierBon = (code: string, signature: string) => fonction<{ valide: boolean; client: string; creneau: string }>('verifier-bon', { code, signature });
-export const validerPesee = (code: string, poids: number[]) => fonction<{ montantPaye?: number; annule?: boolean }>('valider-pesee', { code, poids });
+export async function payerBon(code: string) { const r = await fonction<{ url: string }>('payerBon', { code }); await ouvrir(r.url); }
+export const monQr = async (code: string) => (await fonction<{ signature: string | null }>('monQr', { code })).signature;
+export const verifierBon = (code: string, signature: string) => fonction<{ valide: boolean; client: string; creneau: string }>('verifierBon', { code, signature });
+export const validerPesee = (code: string, poids: number[]) => fonction<{ montantPaye?: number; annule?: boolean }>('validerPesee', { code, poids });
 
+async function moi() { const u = await utilisateur(); if (!u) throw new ErreurServeur('Session expirée, reconnectez-vous.'); return u.uid; }
 export async function envoyerMessage(conv: string, auteur: 'client' | 'pecheur', texte?: string, position?: Message['position'], expireLe?: Date) {
-  verif(await sb().from('messages').insert({ conversation_id: conv, auteur_id: await uid(), auteur, texte: texte ?? null, position: position ?? null, position_expire_le: expireLe?.toISOString() ?? null }));
-  verif(await sb().from('conversations').update(auteur === 'client' ? { lu_pecheur: false } : { lu_client: false }).eq('id', conv));
+  const m: Record<string, unknown> = { auteurId: await moi(), auteur, creeLe: serverTimestamp() };
+  if (texte) m.texte = texte.slice(0, 1000);
+  if (position) { m.position = { libelle: position.libelle, lat: position.lat, lon: position.lon }; m.positionExpireLe = Timestamp.fromDate(expireLe ?? new Date(Date.now() + 30 * 60000)); }
+  await essai(() => addDoc(collection(db(), 'conversations', conv, 'messages'), m));
 }
-// Message vocal : fichier envoyé dans messages-audio/<conversation>/, puis message qui le référence
+// Message vocal : fichier dans messages-audio/<conversation>/, puis message qui le référence
 export async function envoyerAudio(conv: string, auteur: 'client' | 'pecheur', a: { uri: string; type: string; duree: number; donnees?: Blob }) {
-  const corps = a.donnees ? await a.donnees.arrayBuffer() : await (await fetch(a.uri)).arrayBuffer();
-  const ext = a.type.includes('mp4') || a.type.includes('m4a') ? 'm4a' : a.type.includes('ogg') ? 'ogg' : 'webm';
+  const corps = a.donnees ?? (await (await fetch(a.uri)).blob());
+  const ext = a.type.includes('mp4') || a.type.includes('m4a') || a.type.includes('aac') ? 'm4a' : a.type.includes('ogg') ? 'ogg' : 'webm';
   const chemin = conv + '/' + Date.now() + '.' + ext;
-  verif(await sb().storage.from('messages-audio').upload(chemin, corps, { contentType: a.type, upsert: false }));
-  verif(await sb().from('messages').insert({ conversation_id: conv, auteur_id: await uid(), auteur, audio: { chemin, duree: a.duree } }));
-  verif(await sb().from('conversations').update(auteur === 'client' ? { lu_pecheur: false } : { lu_client: false }).eq('id', conv));
+  const uid = await moi();
+  await essai(() => uploadBytes(ref(_st, 'messages-audio/' + chemin), corps, { contentType: a.type }));
+  await essai(() => addDoc(collection(db(), 'conversations', conv, 'messages'), { auteurId: uid, auteur, audio: { chemin, duree: Math.max(1, Math.min(120, Math.round(a.duree))) }, creeLe: serverTimestamp() }));
+}
+// Adresse d'écoute d'un message vocal (fichier privé : droits vérifiés par les règles)
+export async function lienAudio(chemin: string) {
+  init();
+  const r = ref(_st, 'messages-audio/' + chemin);
+  if (Platform.OS === 'web') return URL.createObjectURL(await getBlob(r));
+  return getDownloadURL(r);
 }
 export async function marquerLu(conv: string, role: 'client' | 'pecheur') {
-  await sb().from('conversations').update(role === 'client' ? { lu_client: true } : { lu_pecheur: true }).eq('id', conv);
+  await updateDoc(doc(db(), 'conversations', conv), role === 'client' ? { luClient: true } : { luPecheur: true });
 }
 
-export async function publierArrivage(etalId: string, lignes: { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] }[], photoUrl?: string) {
-  verif(await sb().from('produits').delete().eq('etal_id', etalId));
-  const aPublier = lignes.filter((l) => l.dispoKg > 0).map((l) => ({ etal_id: etalId, espece: l.espece, prix_kg: l.prixKg, dispo_kg: l.dispoKg, preparations: l.preparations }));
-  if (aPublier.length) verif(await sb().from('produits').insert(aPublier));
-  verif(await sb().from('etals').update({ debarque_le: new Date().toISOString(), ...(photoUrl ? { photo_url: photoUrl } : {}) }).eq('id', etalId));
-  fonction('notifier', { type: 'arrivage' }).catch(() => {}); // prévient les clients qui suivent ces espèces
-}
-
-// Photo de la pêche : envoyée dans le dossier public « arrivages/<étal>/ »
+// Photo de la pêche : déposée dans arrivages/<étal>/, renvoie son emplacement
 export async function envoyerPhoto(etalId: string, uri: string, type = 'image/jpeg') {
-  const corps = await (await fetch(uri)).arrayBuffer();
-  const chemin = etalId + '/' + Date.now() + (type === 'image/png' ? '.png' : '.jpg');
-  verif(await sb().storage.from('arrivages').upload(chemin, corps, { contentType: type, upsert: false }));
-  return sb().storage.from('arrivages').getPublicUrl(chemin).data.publicUrl;
+  const corps = await (await fetch(uri)).blob();
+  const chemin = 'arrivages/' + etalId + '/' + Date.now() + (type === 'image/png' ? '.png' : type === 'image/webp' ? '.webp' : '.jpg');
+  init();
+  await essai(() => uploadBytes(ref(_st, chemin), corps, { contentType: type }));
+  return chemin;
+}
+export async function publierArrivage(_etalId: string, lignes: { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] }[], photoChemin?: string) {
+  await fonction('publierArrivage', { lignes, ...(photoChemin ? { photoChemin } : {}) });
 }
 
 export async function posterDemande(d: { espece: string; kg: number; prixMaxKg: number; pour: Demande['pour']; note?: string; livraison?: Demande['livraison'] }, pro: InfosPro) {
-  verif(await sb().from('demandes').insert({ pro_id: await uid(), pro_raison: pro.raison, pro_type: pro.type, pro_commune: pro.commune, espece: d.espece, kg: d.kg, prix_max_kg: d.prixMaxKg, pour: d.pour, note: d.note ?? null, livraison: d.livraison ?? null }));
+  const x: Record<string, unknown> = { proId: await moi(), proRaison: pro.raison, proType: pro.type, proCommune: pro.commune, espece: d.espece, kg: d.kg, prixMaxKg: d.prixMaxKg, pour: d.pour, statut: 'ouverte', creeLe: serverTimestamp() };
+  if (d.note) x.note = d.note;
+  if (d.livraison) x.livraison = d.livraison;
+  await essai(() => addDoc(collection(db(), 'demandes'), x));
 }
-export async function annulerDemande(id: string) { verif(await sb().from('demandes').update({ statut: 'annulee' }).eq('id', id).eq('statut', 'ouverte')); }
-export const accepterDemande = (id: string) => fonction<{ code: string }>('accepter-demande', { id });
+export async function annulerDemande(id: string) { await essai(() => updateDoc(doc(db(), 'demandes', id), { statut: 'annulee' })); }
+export const accepterDemande = (id: string) => fonction<{ code: string }>('accepterDemande', { id });
 
-export const comptePaiement = (action: 'lien' | 'etat') => fonction<{ url?: string; pret?: boolean }>('compte-paiement', { action });
+export const comptePaiement = (action: 'lien' | 'etat') => fonction<{ url?: string; pret?: boolean }>('comptePaiement', { action });
 export async function ouvrirComptePaiement() { const r = await comptePaiement('lien'); if (r.url) await ouvrir(r.url); }
 
 export const exporterDonnees = () => fonction<Record<string, unknown>>('compte', { action: 'exporter' });
-export async function supprimerCompte() { await fonction('compte', { action: 'supprimer' }); await sb().auth.signOut(); }
+export async function supprimerCompte() { await fonction('compte', { action: 'supprimer' }); await signOut(auth()).catch(() => {}); }
 
 // Espèces suivies (« prévenez-moi quand il y a du thazard »)
 export async function suivre(espece: string, oui: boolean) {
-  const id = await uid();
-  if (oui) verif(await sb().from('suivis').upsert({ profil_id: id, espece }));
-  else verif(await sb().from('suivis').delete().eq('profil_id', id).eq('espece', espece));
+  const uid = await moi();
+  await essai(() => updateDoc(doc(db(), 'profils', uid), { suivis: oui ? arrayUnion(espece) : arrayRemove(espece) }));
 }
-export async function especesSuivies() { return ((verif(await sb().from('suivis').select('espece')) as { espece: string }[]) ?? []).map((s) => s.espece); }
 
 // Notifications sur le téléphone (appli installée seulement)
 export async function enregistrerNotifications() {
@@ -302,6 +350,6 @@ export async function enregistrerNotifications() {
     if (status !== 'granted') return;
     const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
     const jeton = (await N.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
-    await sb().from('jetons_push').upsert({ jeton, profil_id: await uid() });
+    await updateDoc(doc(db(), 'profils', await moi()), { jetons: arrayUnion(jeton) });
   } catch { /* notifications facultatives */ }
 }

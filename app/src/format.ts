@@ -15,7 +15,7 @@ export function distanceKm(a: { lat: number; lon: number }, b: { lat: number; lo
   return Math.max(1, Math.round(R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x)) * 1.3));
 }
 
-// Montants : mêmes règles que le serveur (supabase/functions/_shared/montants.ts)
+// Montants : mêmes règles que le serveur (firebase/functions/src/regles.ts)
 export const FRAIS_SERVICE = 0.9;
 export const MARGE_EMPREINTE = 0.1; // on bloque 10 % de plus que l'estimation
 export const sousTotal = (lignes: { kg: number; prixKg: number; supplementKg: number }[]) =>

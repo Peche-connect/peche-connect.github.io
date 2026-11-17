@@ -15,7 +15,7 @@ export default function Compte() {
   const [confirmer, setConfirmer] = useState(false);
   const [info, setInfo] = useState('');
   const [occupe, setOccupe] = useState(false);
-  const identifiant = s?.telephone ? 'numéro terminant par ' + s.telephone.slice(-2) : 'compte Google';
+  const identifiant = s?.email ? s.email : s?.telephone ? 'numéro terminant par ' + s.telephone.slice(-2) : 'compte connecté';
 
   // Droit d'accès / portabilité : fichier JSON de toutes mes données
   const exporter = async () => {

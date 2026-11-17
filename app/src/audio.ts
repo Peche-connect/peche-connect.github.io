@@ -73,6 +73,8 @@ export function versDataUrl(b: Blob): Promise<string> {
 let enCours: { arreter: () => void } | null = null;
 export async function lire(uri: string, finie: () => void): Promise<() => void> {
   enCours?.arreter();
+  // message vocal stocké sur le serveur (« fb:<emplacement> ») : téléchargé au moment de l'écoute
+  if (uri.startsWith('fb:')) { const { lienAudio } = await import('./services/backend'); uri = await lienAudio(uri.slice(3)); }
   if (Platform.OS === 'web') {
     const a = new window.Audio(uri);
     const arreter = () => { a.pause(); finie(); };

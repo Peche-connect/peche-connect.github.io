@@ -8,9 +8,9 @@ import * as B from './services/backend';
 import type { Bon, Conversation, Demande, Etal, InfosPro, LignePanier, Message, Panier, Role, Session } from './types';
 
 // Mode démo : tout est stocké sur le téléphone, aucun paiement réel.
-// Mode réel : dès que EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY sont renseignées
-// (fichier .env, voir .env.example), chaque action passe par le serveur (src/services/backend.ts).
-export const MODE_DEMO = !(process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
+// Mode réel : dès que les clés Firebase EXPO_PUBLIC_FIREBASE_* sont renseignées (fichier .env, voir
+// .env.example), chaque action passe par le serveur Firebase (src/services/backend.ts).
+export const MODE_DEMO = !(process.env.EXPO_PUBLIC_FIREBASE_API_KEY && process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID);
 export const CODE_SMS_DEMO = '123456';
 export const SITE = (process.env.EXPO_PUBLIC_SITE_URL ?? 'https://peche-connect.github.io').replace(/\/$/, '');
 const CLE = MODE_DEMO ? 'peche-connect-app-v1' : 'peche-connect-reel-v1';
@@ -127,12 +127,14 @@ function useMagasin() {
     if (MODE_DEMO) return null;
     try {
       const s = await B.chargerSession();
-      const etals = await B.chargerEtals();
       if (!s.session || !s.uid) {
+        const etals = await B.chargerEtals();
         setE((x) => ({ ...x, session: null, uid: s.uid, profilIncomplet: s.profilIncomplet, etals, bons: [], convs: {}, demandes: [], horloge: B.maintenantMartinique() }));
         return s;
       }
       const [bons, convs, demandes, suivis] = await Promise.all([B.chargerBons(s.uid), B.chargerConversations(s.uid), B.chargerDemandes(s.uid), B.especesSuivies()]);
+      // adresse exacte : seulement les étals où j'ai un bon payé
+      const etals = await B.chargerEtals([...new Set(bons.filter((b) => b.client === 'Vous' && b.statut !== 'a_payer').map((b) => b.etalId))]);
       setE((x) => ({ ...x, session: s.session, uid: s.uid, profilIncomplet: false, etals, bons, convs, demandes, suivis, horloge: B.maintenantMartinique() }));
       return s;
     } catch (err) { erreur(err); return null; }

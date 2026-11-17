@@ -11,32 +11,35 @@ import { couleurs as c, polices as f } from '../src/theme';
 import type { Role } from '../src/types';
 
 type Choix = Role | 'pro';
-const EN_ATTENTE = 'peche-connect-inscription'; // rôle et prénom choisis avant de partir chez Google
+const EN_ATTENTE = 'peche-connect-inscription'; // rôle et prénom choisis avant de partir chez Google / vers l'e-mail
+const urlActuelle = () => (Platform.OS === 'web' && typeof window !== 'undefined' ? window.location.href : '');
 
-// Connexion : en démo, numéro + code 123456. En mode réel : Google et/ou code par SMS (Supabase Auth),
-// puis choix du rôle et du prénom à la première connexion.
+// Connexion. Démo : numéro + code 123456. Mode réel (Firebase) : Google, Apple ou lien reçu par e-mail,
+// gratuits et sans SMS ; à la première connexion, choix du rôle et du prénom.
 export default function Connexion() {
   const app = useApp();
   const [role, setRole] = useState<Choix>('client');
-  const [tel, setTel] = useState('');
   const [prenom, setPrenom] = useState('');
-  const [etape, setEtape] = useState<'numero' | 'code'>('numero');
+  const [tel, setTel] = useState('');
+  const [email, setEmail] = useState('');
+  const [etape, setEtape] = useState<'accueil' | 'code' | 'lien-envoye' | 'confirmer-email'>('accueil');
   const [code, setCode] = useState('');
   const [erreur, setErreur] = useState('');
   const [occupe, setOccupe] = useState(false);
   const chiffres = tel.replace(/\D/g, '');
-  const numeroOk = chiffres.length >= 10;
-  const smsActif = MODE_DEMO || B.CONNEXION_SMS;
-  const googleActif = !MODE_DEMO && B.CONNEXION_GOOGLE;
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+  const prenomManquant = role === 'client' && !prenom.trim();
 
-  // retour de Google : on retrouve le rôle et le prénom choisis avant de partir
+  // retour de Google ou du lien e-mail : on retrouve le rôle et le prénom choisis avant de partir
   useEffect(() => {
     AsyncStorage.getItem(EN_ATTENTE).then((v) => { if (v) { try { const x = JSON.parse(v); setRole(x.role); setPrenom(x.prenom ?? ''); } catch { /* ignoré */ } } });
+    if (!MODE_DEMO && B.estLienEmail(urlActuelle())) terminerLien();
   }, []);
 
   if (!MODE_DEMO && app.e.session) return <Redirect href="/" />;
 
-  // Après connexion (Google ou SMS) : enregistre le profil puis ouvre le bon espace
+  const memoriser = () => AsyncStorage.setItem(EN_ATTENTE, JSON.stringify({ role, prenom }));
+  // Après connexion : enregistre le profil puis ouvre le bon espace
   const continuer = async (r: Choix = role, p: string = prenom) => {
     setOccupe(true); setErreur('');
     await AsyncStorage.removeItem(EN_ATTENTE);
@@ -46,30 +49,55 @@ export default function Connexion() {
     setOccupe(false);
     router.replace('/(client)');
   };
-
-  const envoyerCode = async () => {
-    setErreur('');
-    if (!MODE_DEMO) { setOccupe(true); try { await B.envoyerCodeSms(tel); } catch (err) { setErreur((err as Error).message); setOccupe(false); return; } setOccupe(false); }
-    setEtape('code');
-  };
-  const valider = async () => {
-    if (MODE_DEMO) {
-      if (code !== CODE_SMS_DEMO) { setErreur('Code incorrect. Vérifiez le SMS reçu (démo : ' + CODE_SMS_DEMO + ').'); return; }
-      return continuer();
-    }
-    setOccupe(true);
-    try { await B.verifierCodeSms(tel, code); } catch (err) { setErreur((err as Error).message); setOccupe(false); return; }
+  // Connecté : profil existant → accueil ; première fois → enregistrer le rôle choisi
+  const apresConnexion = async () => {
     const r = await app.recharger();
-    setOccupe(false);
-    if (r && !r.session) await continuer();
+    if (r && !r.session && r.profilIncomplet) {
+      const v = await AsyncStorage.getItem(EN_ATTENTE);
+      const x = v ? JSON.parse(v) as { role: Choix; prenom: string } : null;
+      if (x && (x.role !== 'client' || x.prenom)) await continuer(x.role, x.prenom);
+    }
   };
-  const google = async () => {
-    setErreur(''); setOccupe(true);
-    await AsyncStorage.setItem(EN_ATTENTE, JSON.stringify({ role, prenom }));
-    try { await B.connexionGoogle(); const r = await app.recharger(); if (r && !r.session && r.profilIncomplet) await continuer(); } catch (err) { setErreur((err as Error).message); }
+  const terminerLien = async (adresse?: string) => {
+    setOccupe(true); setErreur('');
+    try {
+      const ok = await B.terminerLienEmail(urlActuelle(), adresse);
+      if (!ok) { setEtape('confirmer-email'); setOccupe(false); return; } // lien ouvert sur un autre appareil
+      if (Platform.OS === 'web') window.history.replaceState(null, '', '/connexion');
+      await apresConnexion();
+    } catch (err) { setErreur((err as Error).message); setEtape('accueil'); }
     setOccupe(false);
   };
 
+  // ── démo : numéro + code ──
+  const envoyerCode = () => { setErreur(''); setEtape('code'); };
+  const validerCode = async () => {
+    if (code !== CODE_SMS_DEMO) { setErreur('Code incorrect (démo : ' + CODE_SMS_DEMO + ').'); return; }
+    await continuer();
+  };
+  // ── mode réel ──
+  const google = async () => {
+    setErreur(''); setOccupe(true); await memoriser();
+    try { await B.connexionGoogle(); await apresConnexion(); } catch (err) { setErreur((err as Error).message); }
+    setOccupe(false);
+  };
+  const apple = async () => {
+    setErreur(''); setOccupe(true); await memoriser();
+    try { await B.connexionApple(); await apresConnexion(); } catch (err) { setErreur((err as Error).message); }
+    setOccupe(false);
+  };
+  const lienEmail = async () => {
+    setErreur(''); setOccupe(true); await memoriser();
+    try { await B.envoyerLienEmail(email); setEtape('lien-envoye'); } catch (err) { setErreur((err as Error).message); }
+    setOccupe(false);
+  };
+
+  const entete = (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
+      <Logo taille={44} />
+      <T tresGras style={{ fontSize: 17, lineHeight: 23 }}>Réservez.{'\n'}Payez.{'\n'}Récupérez.</T>
+    </View>
+  );
   const choixRole = (
     <>
       <View style={st.bascule} accessibilityRole="radiogroup">
@@ -88,15 +116,9 @@ export default function Connexion() {
       ) : null}
     </>
   );
+  const message = erreur ? <T style={{ color: c.alerte }} gras accessibilityRole="alert">{erreur}</T> : null;
 
-  const entete = (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14, marginTop: 8 }}>
-      <Logo taille={44} />
-      <T tresGras style={{ fontSize: 17, lineHeight: 23 }}>Réservez.{'\n'}Payez.{'\n'}Récupérez.</T>
-    </View>
-  );
-
-  // Connecté mais profil pas encore rempli (première connexion)
+  // Connecté mais profil pas encore rempli (première connexion sans choix mémorisé)
   if (!MODE_DEMO && app.e.profilIncomplet) {
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
@@ -107,8 +129,8 @@ export default function Connexion() {
             <T gris>Dites-nous qui vous êtes pour ouvrir le bon espace.</T>
           </View>
           {choixRole}
-          {erreur ? <T style={{ color: c.alerte }} gras>{erreur}</T> : null}
-          <Bouton titre={occupe ? 'Un instant…' : 'Continuer'} desactive={occupe || (role === 'client' && !prenom.trim())} onPress={() => continuer()} />
+          {message}
+          <Bouton titre={occupe ? 'Un instant…' : 'Continuer'} desactive={occupe || prenomManquant} onPress={() => continuer()} />
           <Pressable onPress={() => app.deconnecter()}><T gras style={{ textAlign: 'center', textDecorationLine: 'underline' }}>Changer de compte</T></Pressable>
         </ScrollView>
       </SafeAreaView>
@@ -121,7 +143,7 @@ export default function Connexion() {
         <ScrollView contentContainerStyle={{ padding: 24, gap: 22 }} keyboardShouldPersistTaps="handled">
         {entete}
 
-        {etape === 'numero' ? (
+        {etape === 'accueil' ? (
           <>
             <Image source={require('../assets/ambiance/yoles.jpg')} style={{ width: '100%', height: 170, borderRadius: 16 }} resizeMode="cover" accessibilityLabel="Yoles de pêcheurs sur la plage" />
             <View style={{ gap: 6 }}>
@@ -129,38 +151,72 @@ export default function Connexion() {
               <T gris>Le poisson du jour des pêcheurs de Martinique, réservé en quelques secondes.</T>
             </View>
             {choixRole}
-            {googleActif ? (
-              <Pressable accessibilityRole="button" onPress={google} disabled={occupe || (role === 'client' && !prenom.trim())}
-                style={[st.google, (occupe || (role === 'client' && !prenom.trim())) && { opacity: 0.4 }]}>
-                <T tresGras style={{ fontSize: 18, color: '#4285F4' }}>G</T>
-                <T tresGras style={{ fontSize: 16 }}>Continuer avec Google</T>
-              </Pressable>
-            ) : null}
-            {googleActif && smsActif ? <T gris petit style={{ textAlign: 'center' }}>ou</T> : null}
-            {smsActif ? (
+            {MODE_DEMO ? (
               <>
                 <View style={{ gap: 6 }}>
                   <T gras>Votre numéro de téléphone</T>
                   <TextInput value={tel} onChangeText={setTel} placeholder="0696 12 34 56" keyboardType="phone-pad" style={st.champ} autoComplete="tel" />
-                  <T gris petit>Nous vous envoyons un code par SMS. Votre numéro n’est jamais montré aux autres utilisateurs.</T>
+                  <T gris petit>Démo : aucun SMS n’est envoyé, le code est {CODE_SMS_DEMO}.</T>
                 </View>
-                <Bouton titre={occupe ? 'Envoi…' : 'Recevoir le code'} onPress={envoyerCode} desactive={!numeroOk || occupe || (role === 'client' && !prenom.trim() && !MODE_DEMO)} />
+                <Bouton titre="Recevoir le code" onPress={envoyerCode} desactive={chiffres.length < 10} />
               </>
-            ) : null}
-            {erreur ? <T style={{ color: c.alerte }} gras>{erreur}</T> : null}
+            ) : (
+              <>
+                {B.CONNEXION_GOOGLE ? (
+                  <Pressable accessibilityRole="button" onPress={google} disabled={occupe || prenomManquant} style={[st.fournisseur, (occupe || prenomManquant) && { opacity: 0.4 }]}>
+                    <T tresGras style={{ fontSize: 18, color: '#4285F4' }}>G</T><T tresGras style={{ fontSize: 16 }}>Continuer avec Google</T>
+                  </Pressable>
+                ) : null}
+                {B.CONNEXION_APPLE ? (
+                  <Pressable accessibilityRole="button" onPress={apple} disabled={occupe || prenomManquant} style={[st.fournisseur, { backgroundColor: '#111', borderColor: '#111' }, (occupe || prenomManquant) && { opacity: 0.4 }]}>
+                    <T tresGras style={{ fontSize: 16, color: '#fff' }}>Continuer avec Apple</T>
+                  </Pressable>
+                ) : null}
+                {B.CONNEXION_EMAIL ? (
+                  <View style={{ gap: 8 }}>
+                    {B.CONNEXION_GOOGLE || B.CONNEXION_APPLE ? <T gris petit style={{ textAlign: 'center' }}>ou avec votre e-mail</T> : null}
+                    <TextInput value={email} onChangeText={setEmail} placeholder="vous@exemple.fr" keyboardType="email-address" autoCapitalize="none" autoComplete="email" style={st.champ} accessibilityLabel="Adresse e-mail" />
+                    <Bouton titre={occupe ? 'Envoi…' : 'Recevoir un lien de connexion'} onPress={lienEmail} desactive={!emailOk || occupe || prenomManquant} />
+                    <T gris petit>Pas de mot de passe : on vous envoie un lien, vous le touchez, vous êtes connecté.</T>
+                  </View>
+                ) : null}
+              </>
+            )}
+            {message}
             <T gris petit style={{ textAlign: 'center' }}>En continuant, vous acceptez les conditions générales et la politique de confidentialité.</T>
             <LiensLegaux centre />
           </>
-        ) : (
+        ) : etape === 'code' ? (
           <>
             <View style={{ gap: 6 }}>
               <T tresGras style={{ fontSize: 24 }}>Code reçu par SMS</T>
-              <T gris>Envoyé au {tel}. {MODE_DEMO ? 'Démo : tapez ' + CODE_SMS_DEMO + '.' : ''}</T>
+              <T gris>Démo : tapez {CODE_SMS_DEMO}.</T>
             </View>
             <TextInput value={code} onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))} placeholder="••••••" keyboardType="number-pad" style={[st.champ, st.code]} autoComplete="sms-otp" textContentType="oneTimeCode" maxLength={6} />
-            {erreur ? <T style={{ color: c.alerte }} gras>{erreur}</T> : null}
-            <Bouton titre={occupe ? 'Vérification…' : 'Valider'} onPress={valider} desactive={code.length !== 6 || occupe} />
-            <Pressable onPress={() => { setEtape('numero'); setCode(''); setErreur(''); }}><T gras style={{ textAlign: 'center', textDecorationLine: 'underline' }}>Changer de numéro</T></Pressable>
+            {message}
+            <Bouton titre="Valider" onPress={validerCode} desactive={code.length !== 6} />
+            <Pressable onPress={() => { setEtape('accueil'); setCode(''); setErreur(''); }}><T gras style={{ textAlign: 'center', textDecorationLine: 'underline' }}>Changer de numéro</T></Pressable>
+          </>
+        ) : etape === 'lien-envoye' ? (
+          <>
+            <View style={{ gap: 8 }}>
+              <T tresGras style={{ fontSize: 24 }}>Regardez vos e-mails</T>
+              <T>Nous avons envoyé un lien de connexion à <T tresGras>{email.trim()}</T>.</T>
+              <T gris>Touchez le lien dans l’e-mail : vous serez connecté. Pensez à regarder dans les indésirables.</T>
+            </View>
+            {message}
+            <Bouton clair titre={occupe ? 'Envoi…' : 'Renvoyer le lien'} onPress={lienEmail} desactive={occupe} />
+            <Pressable onPress={() => { setEtape('accueil'); setErreur(''); }}><T gras style={{ textAlign: 'center', textDecorationLine: 'underline' }}>Changer d’adresse</T></Pressable>
+          </>
+        ) : (
+          <>
+            <View style={{ gap: 8 }}>
+              <T tresGras style={{ fontSize: 24 }}>Confirmez votre e-mail</T>
+              <T gris>Vous avez ouvert le lien sur un autre appareil : retapez l’adresse à laquelle vous l’avez reçu.</T>
+            </View>
+            <TextInput value={email} onChangeText={setEmail} placeholder="vous@exemple.fr" keyboardType="email-address" autoCapitalize="none" autoComplete="email" style={st.champ} accessibilityLabel="Adresse e-mail" />
+            {message}
+            <Bouton titre={occupe ? 'Connexion…' : 'Me connecter'} onPress={() => terminerLien(email)} desactive={!emailOk || occupe} />
           </>
         )}
         </ScrollView>
@@ -174,5 +230,5 @@ const st = StyleSheet.create({
   choix: { flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 999 },
   champ: { height: 52, borderRadius: 12, backgroundColor: c.doux, paddingHorizontal: 16, fontSize: 17, fontFamily: f.gras, color: c.texte },
   code: { fontSize: 28, letterSpacing: 10, textAlign: 'center' },
-  google: { height: 54, borderRadius: 13, borderWidth: 1.5, borderColor: c.ligne, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: '#fff' },
+  fournisseur: { height: 54, borderRadius: 13, borderWidth: 1.5, borderColor: c.ligne, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12, backgroundColor: '#fff' },
 });

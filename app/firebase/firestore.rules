@@ -108,7 +108,7 @@ service cloud.firestore {
         && request.resource.data.espece is string && request.resource.data.espece.size() <= 40
         && request.resource.data.kg is number && request.resource.data.kg > 0 && request.resource.data.kg <= 1000
         && request.resource.data.prixMaxKg is number && request.resource.data.prixMaxKg > 0 && request.resource.data.prixMaxKg < 500
-        && request.resource.data.pour in ['Aujourd’hui', 'Demain']
+        && request.resource.data.pour is string && request.resource.data.pour.size() <= 20 // « Aujourd’hui » ou « Demain »
         && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 300));
       // le pro peut seulement annuler un besoin encore ouvert
       allow update: if connecte() && resource.data.proId == moi() && resource.data.statut == 'ouverte'

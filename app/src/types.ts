@@ -66,4 +66,4 @@ export type Message = {
 
 export type Conversation = { id: string; uuid?: string; etalId: string; client: string; bon: string; messages: Message[]; luClient: boolean; luPecheur: boolean };
 
-export type Session = { telephone: string; role: Role; prenom: string; pro?: InfosPro; etalId?: string; statutPecheur?: 'en_attente' | 'verifie'; stripePret?: boolean } | null;
+export type Session = { telephone: string; email?: string; role: Role; prenom: string; pro?: InfosPro; etalId?: string; statutPecheur?: 'en_attente' | 'verifie'; stripePret?: boolean } | null;
