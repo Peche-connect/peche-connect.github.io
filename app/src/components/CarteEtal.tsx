@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Pressable, View } from 'react-native';
+import { Image, Pressable, View } from 'react-native';
 import { euro, heure } from '../format';
 import { useApp } from '../store';
 import { couleurs as c } from '../theme';
@@ -13,8 +13,8 @@ export function CarteEtal({ etal: e, large }: { etal: Etal; large?: boolean }) {
   const mp = app.minPrix(e);
   return (
     <Pressable accessibilityRole="button" onPress={() => router.push({ pathname: '/etal/[id]', params: { id: e.id } })} style={{ width: large ? '100%' : 260, gap: 5 }}>
-      <View style={[s.photo, { height: large ? 150 : 130 }]}>
-        <T gras gris petit style={{ letterSpacing: 1 }}>{e.port.toUpperCase()}</T>
+      <View style={[s.photo, { height: large ? 150 : 130, overflow: 'hidden' }]}>
+        {e.photo ? <Image source={{ uri: e.photo }} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} resizeMode="cover" accessibilityLabel={'Pêche du jour de ' + e.pecheur} /> : <T gras gris petit style={{ letterSpacing: 1 }}>{e.port.toUpperCase()}</T>}
         <View style={{ position: 'absolute', left: 10, top: 10 }}>
           {restant > 0 && restant <= 6
             ? <View style={{ backgroundColor: c.alerte, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 4 }}><T gras style={{ color: '#fff', fontSize: 12 }}>Bientôt épuisé</T></View>

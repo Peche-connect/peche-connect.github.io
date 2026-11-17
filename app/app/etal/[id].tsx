@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcVerrou } from '../../src/components/icones';
 import { Bouton, Chip, Feuille, Pastille, Prix, Rond, Stepper, T, Vide, s } from '../../src/components/ui';
@@ -27,8 +27,8 @@ export default function EtalEcran() {
   return (
     <SafeAreaView edges={['bottom']} style={{ flex: 1, backgroundColor: c.fond }}>
       <ScrollView>
-        <View style={[s.photo, { height: 190, borderRadius: 0 }]}>
-          <T gras gris style={{ letterSpacing: 1 }}>{e.port.toUpperCase()}</T>
+        <View style={[s.photo, { height: 190, borderRadius: 0, overflow: 'hidden' }]}>
+          {e.photo ? <Image source={{ uri: e.photo }} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0 }} resizeMode="cover" accessibilityLabel={'Pêche du jour de ' + e.pecheur} /> : <T gras gris style={{ letterSpacing: 1 }}>{e.port.toUpperCase()}</T>}
           <SafeAreaView edges={['top']} style={{ position: 'absolute', left: 14, right: 14, top: 0, flexDirection: 'row', justifyContent: 'space-between' }}>
             <Rond blanc label="Retour" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(client)'))}><T tresGras style={{ fontSize: 20 }}>‹</T></Rond>
           </SafeAreaView>

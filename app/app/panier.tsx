@@ -29,9 +29,10 @@ export default function PanierEcran() {
 
   const reserver = () => {
     setEnvoi(true);
-    // En production : appel à la fonction serveur « creer-reservation » qui crée l'empreinte bancaire Stripe
-    setTimeout(() => {
-      const code = app.reserver();
+    // Mode réel : la fonction serveur « creer-reservation » vérifie le panier puis ouvre la page de paiement
+    // Stripe (empreinte bancaire) ; au retour, le bon s'affiche.
+    setTimeout(async () => {
+      const code = await app.reserver();
       setEnvoi(false);
       if (code) router.replace({ pathname: '/bon/[code]', params: { code } });
     }, MODE_DEMO ? 600 : 0);

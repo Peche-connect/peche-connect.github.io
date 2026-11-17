@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, Chip, Logo, T } from '../src/components/ui';
@@ -10,7 +10,9 @@ import { couleurs as c, polices as f } from '../src/theme';
 // Inscription pêcheur : identité professionnelle, vérification, puis compte de paiement (Stripe Connect)
 export default function InscriptionPecheur() {
   const app = useApp();
-  const { tel } = useLocalSearchParams<{ tel?: string }>();
+  const { tel, stripe } = useLocalSearchParams<{ tel?: string; stripe?: string }>();
+  // retour de la page Stripe : on vérifie si le compte de paiement est prêt
+  useEffect(() => { if (stripe) app.verifierComptePaiement(); }, [stripe]);
   const session = app.e.session;
   const [prenom, setPrenom] = useState('');
   const [port, setPort] = useState('Le Robert');
@@ -26,12 +28,13 @@ export default function InscriptionPecheur() {
           <Logo taille={30} />
           <T tresGras style={{ fontSize: 24 }}>Bonjou {session.prenom}</T>
           <Etape num="1" titre="Dossier envoyé" texte="Vos informations de pêcheur professionnel sont enregistrées." fait />
-          <Etape num="2" titre="Vérification" texte={verifie ? 'Votre statut de pêcheur professionnel est vérifié.' : 'Nous vérifions votre immatriculation et votre statut (sous 48 h). Vous recevrez un SMS.'} fait={verifie} />
+          <Etape num="2" titre="Vérification" texte={verifie ? 'Votre statut de pêcheur professionnel est vérifié.' : 'Nous vérifions votre immatriculation et votre statut (sous 48 h). Vous serez prévenu dans l’appli.'} fait={verifie} />
           <Etape num="3" titre="Compte de paiement" texte={session.stripePret ? 'Votre compte est prêt : l’argent des ventes vous est versé automatiquement.' : 'Pièce d’identité, RIB et SIRET, pour recevoir l’argent de vos ventes. Nous pouvons vous aider à le remplir.'} fait={!!session.stripePret} />
           {MODE_DEMO && !verifie ? <Bouton clair titre="Démo : simuler la vérification" onPress={app.simulerVerification} /> : null}
-          {verifie && !session.stripePret ? <Bouton titre="Ouvrir mon compte de paiement" onPress={app.simulerStripe} /> : null}
+          {verifie && !session.stripePret ? <Bouton titre="Ouvrir mon compte de paiement" onPress={app.ouvrirComptePaiement} /> : null}
           {verifie && session.stripePret ? <Bouton titre="Publier mon premier arrivage" onPress={() => router.replace('/(pecheur)/arrivage')} /> : null}
-          <Bouton clair titre="Me déconnecter" onPress={() => { app.deconnecter(); router.replace('/connexion'); }} />
+          {!MODE_DEMO && verifie && !session.stripePret && stripe ? <Bouton clair titre="J’ai terminé : vérifier mon compte" onPress={app.verifierComptePaiement} /> : null}
+          <Bouton clair titre="Me déconnecter" onPress={async () => { await app.deconnecter(); router.replace('/connexion'); }} />
         </ScrollView>
       </SafeAreaView>
     );
@@ -55,7 +58,7 @@ export default function InscriptionPecheur() {
         <Champ libelle="Nom de votre bateau" valeur={bateau} onChange={setBateau} exemple="Ex. Yole Bèl Lanmè" />
         <Champ libelle="Immatriculation du bateau" valeur={immat} onChange={(v) => setImmat(v.toUpperCase())} exemple="Ex. FF 890414" />
         <Bouton titre="Envoyer mon dossier" desactive={!complet}
-          onPress={() => app.inscrirePecheur({ prenom: prenom.trim(), port, bateau: bateau.trim(), immatriculation: immat.trim(), telephone: tel ?? '' })} />
+          onPress={async () => await app.inscrirePecheur({ prenom: prenom.trim(), port, bateau: bateau.trim(), immatriculation: immat.trim(), telephone: tel ?? '' })} />
         <Bouton clair titre="Retour" onPress={() => router.replace('/connexion')} />
       </ScrollView>
     </SafeAreaView>

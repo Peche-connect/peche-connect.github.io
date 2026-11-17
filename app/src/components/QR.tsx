@@ -1,26 +1,28 @@
-import Svg, { Rect } from 'react-native-svg';
+import Svg, { Path, Rect } from 'react-native-svg';
+// Cœur de la bibliothèque « qrcode » (pur JavaScript, fonctionne sur téléphone et sur le web)
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const QRCode = require('qrcode/lib/core/qrcode') as { create: (t: string, o: { errorCorrectionLevel: string }) => { modules: { size: number; data: Uint8Array } } };
 
-// Motif de QR code dérivé du code du bon (illustratif). En production : vrai QR
-// encodant l'identifiant signé du bon, scanné par le pêcheur pour valider le retrait.
-export function QR({ code, taille = 104 }: { code: string; taille?: number }) {
-  let h = 0;
-  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) >>> 0;
-  const rnd = () => { h ^= h << 13; h >>>= 0; h ^= h >> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; };
-  const cases: { x: number; y: number }[] = [];
-  for (let y = 0; y < 21; y++) for (let x = 0; x < 21; x++) {
-    const repere = (x < 8 && y < 8) || (x > 12 && y < 8) || (x < 8 && y > 12);
-    if (!repere && rnd() > 0.52) cases.push({ x, y });
+// Vrai QR code lisible par n'importe quel appareil photo. Il contient le lien signé du bon
+// (…/pesee/R-127?s=signature) : le pêcheur le scanne, la signature est vérifiée par le serveur.
+export function QR({ contenu, taille = 104 }: { contenu: string; taille?: number }) {
+  if (!contenu) return <Svg width={taille} height={taille}><Rect width={taille} height={taille} fill="#f3f3f1" rx={8} /></Svg>;
+  const { size, data } = QRCode.create(contenu, { errorCorrectionLevel: 'M' }).modules;
+  let d = '';
+  for (let y = 0; y < size; y++) {
+    let x = 0;
+    while (x < size) {
+      if (data[y * size + x]) {
+        let fin = x; while (fin < size && data[y * size + fin]) fin++;
+        d += 'M' + x + ' ' + y + 'h' + (fin - x) + 'v1h-' + (fin - x) + 'z';
+        x = fin;
+      } else x++;
+    }
   }
-  const finder = (x: number, y: number) => [
-    <Rect key={'a' + x + y} x={x} y={y} width={7} height={7} fill="#111" />,
-    <Rect key={'b' + x + y} x={x + 1} y={y + 1} width={5} height={5} fill="#fff" />,
-    <Rect key={'c' + x + y} x={x + 2} y={y + 2} width={3} height={3} fill="#111" />,
-  ];
   return (
-    <Svg width={taille} height={taille} viewBox="-1 -1 23 23" accessibilityLabel={'QR code du bon ' + code}>
-      <Rect x={-1} y={-1} width={23} height={23} fill="#fff" />
-      {cases.map((k) => <Rect key={k.x + '-' + k.y} x={k.x} y={k.y} width={1} height={1} fill="#111" />)}
-      {finder(0, 0)}{finder(14, 0)}{finder(0, 14)}
+    <Svg width={taille} height={taille} viewBox={'-2 -2 ' + (size + 4) + ' ' + (size + 4)} accessibilityLabel="QR code du bon">
+      <Rect x={-2} y={-2} width={size + 4} height={size + 4} fill="#fff" />
+      <Path d={d} fill="#111" />
     </Svg>
   );
 }

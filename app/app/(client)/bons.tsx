@@ -22,9 +22,9 @@ export default function MesBons() {
                 <T tresGras style={{ fontSize: 18 }}>{b.code}</T>
                 <Pastille texte={b.creneau} />
               </View>
-              <T>Étal de {e?.pecheur} · {e?.port}</T>
+              <T>Étal de {e?.pecheur ?? '—'} · {e?.port ?? ''}</T>
               <T gris petit>{app.resume(b.lignes)}</T>
-              <Pastille texte={b.statut === 'retire' ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) : 'À retirer · en attente de pesée'} style={{ backgroundColor: b.statut === 'retire' ? '#dff3ea' : c.doux }} />
+              <Pastille texte={b.statut === 'retire' ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) : b.statut === 'a_payer' ? 'À régler pour confirmer' : 'À retirer · en attente de pesée'} style={{ backgroundColor: b.statut === 'retire' ? '#dff3ea' : b.statut === 'a_payer' ? '#fde7dc' : c.doux }} />
             </Pressable>
           );
         })}

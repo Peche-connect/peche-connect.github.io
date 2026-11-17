@@ -1,18 +1,25 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 import { ETALS_DEMO, PORTS } from './data/demo';
-import { distanceKm, FRAIS_LIVRAISON, heure, kg, LIVRAISON_MIN_KG, montantBloque, sousTotal } from './format';
+import { distanceKm, FRAIS_LIVRAISON, FRAIS_SERVICE, heure, kg, LIVRAISON_MIN_KG, montantBloque, sousTotal } from './format';
+import * as B from './services/backend';
 import type { Bon, Conversation, Demande, Etal, InfosPro, LignePanier, Message, Panier, Role, Session } from './types';
 
-// Mode démo : tout est stocké sur le téléphone. En production, chaque action
-// passera par Supabase (voir src/services/backend.ts et supabase/).
-export const MODE_DEMO = !process.env.EXPO_PUBLIC_SUPABASE_URL;
+// Mode démo : tout est stocké sur le téléphone, aucun paiement réel.
+// Mode réel : dès que EXPO_PUBLIC_SUPABASE_URL et EXPO_PUBLIC_SUPABASE_ANON_KEY sont renseignées
+// (fichier .env, voir .env.example), chaque action passe par le serveur (src/services/backend.ts).
+export const MODE_DEMO = !(process.env.EXPO_PUBLIC_SUPABASE_URL && process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY);
 export const CODE_SMS_DEMO = '123456';
-const CLE = 'peche-connect-app-v1';
+export const SITE = (process.env.EXPO_PUBLIC_SITE_URL ?? 'https://peche-connect.github.io').replace(/\/$/, '');
+const CLE = MODE_DEMO ? 'peche-connect-app-v1' : 'peche-connect-reel-v1';
 const HEURE_DEMO = 8 * 60 + 5; // en démo, l'horloge démarre à 8 h 05
+const DELAI_POSITION_MIN = 30;  // la position « une seule fois » est effacée après 30 min
 
 type Etat = {
   session: Session;
+  uid: string | null;              // mode réel : identifiant du compte connecté
+  profilIncomplet: boolean;        // mode réel : connecté (Google / SMS) mais prénom et rôle pas encore choisis
   commune: string;
   etals: Etal[];
   panier: Panier;
@@ -23,29 +30,35 @@ type Etat = {
   prochainCode: number;
   horloge: number;
   demandes: Demande[];
+  suivis: string[];                // espèces suivies (alertes d'arrivage)
+  erreur: string | null;
 };
 
 const etatInitial = (): Etat => ({
   session: null,
+  uid: null,
+  profilIncomplet: false,
   commune: 'Le Robert',
-  etals: JSON.parse(JSON.stringify(ETALS_DEMO)),
+  etals: MODE_DEMO ? JSON.parse(JSON.stringify(ETALS_DEMO)) : [],
   panier: null,
   creneau: null,
   livraison: false,
-  bons: [
+  bons: MODE_DEMO ? [
     { code: 'R-25', etalId: 'jm', client: 'Sophie L.', lignes: [{ produitId: 'jm1', espece: 'Thon jaune', kg: 1.5, prixKg: 14, preparation: 'En tranches', supplementKg: 2 }], creneau: 'Avant 10 h', statut: 'reserve', montantBloque: 27.3, creeLe: 0 },
     { code: 'R-26', etalId: 'jm', client: 'Marc D.', lignes: [{ produitId: 'jm2', espece: 'Dorade coryphène', kg: 2, prixKg: 13, preparation: 'En filets', supplementKg: 3 }], creneau: '10 h – 12 h', statut: 'reserve', montantBloque: 36.1, creeLe: 0 },
-  ],
-  convs: {
+  ] : [],
+  convs: MODE_DEMO ? {
     'jm|Sophie L.': { id: 'jm|Sophie L.', etalId: 'jm', client: 'Sophie L.', bon: 'R-25', luClient: true, luPecheur: false,
       messages: [{ id: 'm0', auteur: 'client', texte: 'Bonjour, je suis sur le parking. Vous êtes où exactement ?', heure: 7 * 60 + 57 }] },
-  },
+  } : {},
   prochainCode: 27,
-  horloge: HEURE_DEMO,
-  demandes: [
+  horloge: MODE_DEMO ? HEURE_DEMO : B.maintenantMartinique(),
+  demandes: MODE_DEMO ? [
     { id: 'd1', auteur: 'Chez Tante Arlette', pro: { raison: 'Restaurant Chez Tante Arlette', type: 'Restaurant', siret: '12345678900012', commune: 'Le Robert' }, espece: 'Thon jaune', kg: 15, prixMaxKg: 13, pour: 'Demain', note: 'Livraison avant 10 h si possible', statut: 'ouverte', creeLe: 7 * 60 },
     { id: 'd2', auteur: 'Poissonnerie du Bourg', pro: { raison: 'Poissonnerie du Bourg', type: 'Poissonnerie', siret: '98765432100011', commune: 'Le François' }, espece: 'Vivaneau', kg: 10, prixMaxKg: 16, pour: 'Aujourd’hui', statut: 'ouverte', creeLe: 7 * 60 + 30 },
-  ],
+  ] : [],
+  suivis: [],
+  erreur: null,
 });
 
 function creneauxDe(e: Etal) {
@@ -68,11 +81,32 @@ function reponseDemo(texte: string, e: Etal): Omit<Message, 'id' | 'heure'>[] {
   return [{ auteur: 'pecheur', texte: 'Bien reçu, merci !' }];
 }
 
-// Anti-contournement : les numéros de téléphone sont masqués dans la messagerie
+// Anti-contournement : les numéros de téléphone sont masqués dans la messagerie (aussi fait côté serveur)
 export function masquerNumeros(t: string) {
   const re = /(\+?\d[\d .-]{7,}\d)/g;
   return { texte: t.replace(re, '•• •• •• •• ••'), masque: re.test(t) };
 }
+
+// Position réelle du téléphone (GPS) ; à défaut, le port du pêcheur
+async function positionActuelle(defaut: { lat: number; lon: number }) {
+  try {
+    if (Platform.OS === 'web') {
+      if (!('geolocation' in navigator)) return defaut;
+      return await new Promise<{ lat: number; lon: number }>((ok) => navigator.geolocation.getCurrentPosition(
+        (p) => ok({ lat: p.coords.latitude, lon: p.coords.longitude }), () => ok(defaut), { timeout: 8000, enableHighAccuracy: true }));
+    }
+    const L = await import('expo-location');
+    const { status } = await L.requestForegroundPermissionsAsync();
+    if (status !== 'granted') return defaut;
+    const p = await L.getCurrentPositionAsync({ accuracy: L.Accuracy.High });
+    return { lat: p.coords.latitude, lon: p.coords.longitude };
+  } catch { return defaut; }
+}
+
+const aujourdHuiA = (minutes: number) => { // minutes (heure de Martinique) → Date
+  const d = new Date(); const m = B.maintenantMartinique();
+  return new Date(d.getTime() + (minutes - m) * 60000);
+};
 
 function useMagasin() {
   const [e, setE] = useState<Etat>(etatInitial);
@@ -80,25 +114,78 @@ function useMagasin() {
   const ref = useRef(e);
   ref.current = e;
 
-  useEffect(() => {
-    AsyncStorage.getItem(CLE).then((v) => { if (v) { try { setE({ ...etatInitial(), ...JSON.parse(v), demandes: JSON.parse(v).demandes ?? etatInitial().demandes }); } catch {} } }).finally(() => setPret(true));
-  }, []);
-  useEffect(() => { if (pret) AsyncStorage.setItem(CLE, JSON.stringify(e)).catch(() => {}); }, [e, pret]);
-
   const maj = (f: (x: Etat) => Etat) => setE((x) => f(JSON.parse(JSON.stringify(x))));
-  const tic = (x: Etat) => (x.horloge += 1);
+  const tic = (x: Etat) => (MODE_DEMO ? (x.horloge += 1) : (x.horloge = B.maintenantMartinique()));
+  const erreur = (err: unknown) => {
+    const m = err instanceof Error ? err.message : 'Une erreur est survenue.';
+    setE((x) => ({ ...x, erreur: m }));
+  };
+
+  // ───────── Mode réel : chargement depuis le serveur ─────────
+  const recharger = async (): Promise<{ session: Session; profilIncomplet: boolean } | null> => {
+    if (MODE_DEMO) return null;
+    try {
+      const s = await B.chargerSession();
+      const etals = await B.chargerEtals();
+      if (!s.session || !s.uid) {
+        setE((x) => ({ ...x, session: null, uid: s.uid, profilIncomplet: s.profilIncomplet, etals, bons: [], convs: {}, demandes: [], horloge: B.maintenantMartinique() }));
+        return s;
+      }
+      const [bons, convs, demandes, suivis] = await Promise.all([B.chargerBons(s.uid), B.chargerConversations(s.uid), B.chargerDemandes(s.uid), B.especesSuivies()]);
+      setE((x) => ({ ...x, session: s.session, uid: s.uid, profilIncomplet: false, etals, bons, convs, demandes, suivis, horloge: B.maintenantMartinique() }));
+      return s;
+    } catch (err) { erreur(err); return null; }
+  };
+
+  useEffect(() => {
+    // éléments gardés sur le téléphone : tout en démo ; seulement commune / panier en mode réel
+    AsyncStorage.getItem(CLE).then((v) => {
+      if (!v) return;
+      try {
+        const lu = JSON.parse(v);
+        if (MODE_DEMO) setE({ ...etatInitial(), ...lu, demandes: lu.demandes ?? etatInitial().demandes, suivis: lu.suivis ?? [], erreur: null });
+        else setE((x) => ({ ...x, commune: lu.commune ?? x.commune, panier: lu.panier ?? null, creneau: lu.creneau ?? null }));
+      } catch { /* données illisibles : on repart de zéro */ }
+    }).finally(async () => {
+      // mode réel : on n'attend pas plus de 6 s le serveur (réseau faible au port) ; l'écran s'affiche
+      // et se complète dès que les données arrivent
+      if (!MODE_DEMO) {
+        const delai = new Promise<'delai'>((ok) => setTimeout(() => ok('delai'), 6000));
+        if ((await Promise.race([recharger(), delai])) === 'delai') setE((x) => ({ ...x, erreur: 'Connexion lente : les arrivages s’affichent dès que le réseau répond.' }));
+      }
+      setPret(true);
+    });
+    if (MODE_DEMO) return;
+    const abonnement = B.surChangementSession(() => { recharger(); });
+    const arret = B.ecouterChangements(() => { recharger(); });
+    const minuteur = setInterval(() => setE((x) => ({ ...x, horloge: B.maintenantMartinique() })), 30000);
+    return () => { abonnement.unsubscribe(); arret(); clearInterval(minuteur); };
+  }, []);
+  useEffect(() => {
+    if (!pret) return;
+    const { session, commune, panier, creneau } = e;
+    const aGarder = MODE_DEMO ? { ...e, erreur: null } : { commune, panier, creneau };
+    AsyncStorage.setItem(CLE, JSON.stringify(aGarder)).catch(() => {});
+    if (!MODE_DEMO && session) B.enregistrerNotifications();
+  }, [e, pret]);
 
   const actions = useMemo(() => ({
-    // --- Connexion (en production : Supabase Auth par SMS) ---
-    connecter(telephone: string, role: Role, prenom: string) {
+    effacerErreur() { setE((x) => ({ ...x, erreur: null })); },
+    recharger,
+
+    // ───────── Connexion ─────────
+    async connecter(telephone: string, role: Role, prenom: string) {
+      if (!MODE_DEMO) { try { await B.enregistrerClient(prenom, ref.current.commune); await recharger(); } catch (err) { erreur(err); } return; }
       maj((x) => ({ ...x, session: role === 'pecheur'
         ? { telephone, role, prenom, etalId: 'jm', statutPecheur: 'verifie', stripePret: true }
         : { telephone, role, prenom } }));
     },
-    connecterPro(telephone: string, prenom: string, pro: InfosPro) {
+    async connecterPro(telephone: string, prenom: string, pro: InfosPro) {
+      if (!MODE_DEMO) { try { await B.enregistrerPro(prenom, pro); await recharger(); maj((x) => ({ ...x, commune: PORTS[pro.commune] ? pro.commune : x.commune })); } catch (err) { erreur(err); } return; }
       maj((x) => ({ ...x, session: { telephone, role: 'client', prenom, pro }, commune: PORTS[pro.commune] ? pro.commune : x.commune }));
     },
-    inscrirePecheur(infos: { prenom: string; port: string; bateau: string; immatriculation: string; telephone: string }) {
+    async inscrirePecheur(infos: { prenom: string; port: string; bateau: string; immatriculation: string; telephone: string }) {
+      if (!MODE_DEMO) { try { await B.inscrirePecheur(infos); await recharger(); } catch (err) { erreur(err); } return; }
       maj((x) => {
         const id = 'moi';
         x.etals = x.etals.filter((t) => t.id !== id);
@@ -108,12 +195,27 @@ function useMagasin() {
         return x;
       });
     },
-    // --- Demandes des professionnels (en production : table « demandes » + notification aux pêcheurs du secteur) ---
-    posterDemande(d: { espece: string; kg: number; prixMaxKg: number; pour: Demande['pour']; note?: string; livraison?: Demande['livraison'] }) {
+    // Compte de paiement du pêcheur : page sécurisée de Stripe en mode réel
+    async ouvrirComptePaiement() {
+      if (MODE_DEMO) { maj((x) => { if (x.session) x.session.stripePret = true; return x; }); return; }
+      try { await B.ouvrirComptePaiement(); } catch (err) { erreur(err); }
+    },
+    async verifierComptePaiement() {
+      if (MODE_DEMO) return;
+      try { await B.comptePaiement('etat'); await recharger(); } catch (err) { erreur(err); }
+    },
+
+    // ───────── Demandes des professionnels ─────────
+    async posterDemande(d: { espece: string; kg: number; prixMaxKg: number; pour: Demande['pour']; note?: string; livraison?: Demande['livraison'] }) {
+      if (!MODE_DEMO) { const pro = ref.current.session?.pro; if (!pro) return; try { await B.posterDemande(d, pro); await recharger(); } catch (err) { erreur(err); } return; }
       maj((x) => { if (!x.session?.pro) return x; x.demandes.unshift({ ...d, id: 'd' + Date.now(), auteur: 'Vous', pro: x.session.pro, statut: 'ouverte', creeLe: x.horloge }); return x; });
     },
-    annulerDemande(id: string) { maj((x) => { const d = x.demandes.find((y) => y.id === id); if (d && d.statut === 'ouverte') d.statut = 'annulee'; return x; }); },
-    accepterDemande(id: string, etalId: string) {
+    async annulerDemande(id: string) {
+      if (!MODE_DEMO) { try { await B.annulerDemande(id); await recharger(); } catch (err) { erreur(err); } return; }
+      maj((x) => { const d = x.demandes.find((y) => y.id === id); if (d && d.statut === 'ouverte') d.statut = 'annulee'; return x; });
+    },
+    async accepterDemande(id: string, etalId: string) {
+      if (!MODE_DEMO) { try { await B.accepterDemande(id); await recharger(); } catch (err) { erreur(err); } return; }
       maj((x) => {
         const d = x.demandes.find((y) => y.id === id); if (!d || d.statut !== 'ouverte') return x;
         const code = 'R-' + x.prochainCode; x.prochainCode += 1;
@@ -131,11 +233,14 @@ function useMagasin() {
     },
     simulerVerification() { maj((x) => { if (x.session) x.session.statutPecheur = 'verifie'; return x; }); },
     simulerStripe() { maj((x) => { if (x.session) x.session.stripePret = true; return x; }); },
-    deconnecter() { maj((x) => ({ ...x, session: null, panier: null })); },
+    async deconnecter() {
+      if (!MODE_DEMO) { try { await B.deconnexion(); } catch { /* déjà déconnecté */ } setE((x) => ({ ...etatInitial(), etals: x.etals, commune: x.commune })); return; }
+      maj((x) => ({ ...x, session: null, panier: null }));
+    },
     reinitialiser() { const s = etatInitial(); setE(s); },
     choisirCommune(c: string) { maj((x) => ({ ...x, commune: c })); },
 
-    // --- Panier ---
+    // ───────── Panier (toujours sur le téléphone) ─────────
     reglerKg(etalId: string, produitId: string, q: number) {
       maj((x) => {
         const et = x.etals.find((t) => t.id === etalId)!; const pr = et.produits.find((p) => p.id === produitId)!;
@@ -160,9 +265,19 @@ function useMagasin() {
     choisirCreneau(c: string) { maj((x) => ({ ...x, creneau: c })); },
     choisirLivraison(v: boolean) { maj((x) => ({ ...x, livraison: v })); },
 
-    // --- Réservation (en production : fonction serveur « creer-reservation » + Stripe) ---
-    reserver(): string | null {
+    // ───────── Réservation : empreinte bancaire Stripe en mode réel ─────────
+    async reserver(): Promise<string | null> {
       const x0 = ref.current; if (!x0.panier || !x0.session) return null;
+      if (!MODE_DEMO) {
+        const et = x0.etals.find((t) => t.id === x0.panier!.etalId); if (!et) return null;
+        const creneau = x0.creneau && creneauxDe(et).includes(x0.creneau) ? x0.creneau : creneauxDe(et)[Math.min(1, creneauxDe(et).length - 1)];
+        try {
+          const code = await B.reserver(et.id, x0.panier.lignes, creneau, x0.livraison);
+          maj((x) => ({ ...x, panier: null, livraison: false }));
+          await recharger();
+          return code;
+        } catch (err) { erreur(err); await recharger(); return null; }
+      }
       const code = 'R-' + x0.prochainCode;
       maj((x) => {
         const et = x.etals.find((t) => t.id === x.panier!.etalId)!;
@@ -187,9 +302,24 @@ function useMagasin() {
       }), 2500);
       return code;
     },
+    // Commande de pro acceptée par un pêcheur : la régler
+    async payerBon(code: string) {
+      if (MODE_DEMO) { maj((x) => { const b = x.bons.find((y) => y.code === code); if (b) b.statut = 'reserve'; return x; }); return; }
+      try { await B.payerBon(code); } catch (err) { erreur(err); }
+    },
+    // Contenu du QR code du bon : lien signé par le serveur (non falsifiable)
+    async lienQr(code: string): Promise<string> {
+      if (MODE_DEMO) return SITE + '/pesee/' + code + '?s=demo';
+      try { const s = await B.monQr(code); return s ? SITE + '/pesee/' + code + '?s=' + s : ''; } catch { return ''; }
+    },
+    async verifierQr(code: string, signature: string): Promise<{ ok: boolean; message: string }> {
+      if (MODE_DEMO) return { ok: true, message: 'QR lu (démo : pas de vérification de signature).' };
+      try { const r = await B.verifierBon(code, signature); return { ok: true, message: 'QR authentique · ' + r.client + ' · ' + r.creneau }; }
+      catch (err) { return { ok: false, message: err instanceof Error ? err.message : 'QR non valable.' }; }
+    },
 
-    // --- Messagerie ---
-    envoyer(convId: string, texte: string, auteur: Role) {
+    // ───────── Messagerie ─────────
+    async envoyer(convId: string, texte: string, auteur: Role) {
       texte = texte.trim(); if (!texte) return;
       const m = masquerNumeros(texte);
       maj((x) => {
@@ -199,7 +329,12 @@ function useMagasin() {
         if (auteur === 'client') c.luPecheur = false; else c.luClient = false;
         return x;
       });
-      if (auteur === 'client' && MODE_DEMO) {
+      if (!MODE_DEMO) {
+        const c = ref.current.convs[convId];
+        try { if (c?.uuid) await B.envoyerMessage(c.uuid, auteur, m.texte); await recharger(); } catch (err) { erreur(err); }
+        return;
+      }
+      if (auteur === 'client') {
         setTimeout(() => maj((x) => {
           const c = x.convs[convId]; const et = x.etals.find((t) => t.id === c.etalId)!;
           reponseDemo(texte, et).forEach((r, i) => c.messages.push({ ...r, id: 'r' + Date.now() + i, heure: tic(x) }));
@@ -207,41 +342,77 @@ function useMagasin() {
         }), 1300);
       }
     },
-    envoyerPosition(convId: string, mode: 'direct' | 'une-fois' | 'habituel') {
+    // Position du pêcheur : visible seulement dans la conversation d'un client avec un bon payé,
+    // et effacée automatiquement (fin du retrait, ou 30 min pour « une seule fois »)
+    async envoyerPosition(convId: string, mode: 'direct' | 'une-fois' | 'habituel') {
+      const x0 = ref.current; const c = x0.convs[convId]; const et = x0.etals.find((t) => t.id === c?.etalId); if (!c || !et) return;
+      const port = PORTS[et.port] ?? PORTS['Le Robert'];
+      const libelle = mode === 'direct' ? 'Position jusqu’à ' + heure(et.limiteRetrait) : mode === 'une-fois' ? 'Position envoyée à ' + heure(x0.horloge) : 'Point de vente habituel · ' + (et.lieu ?? et.port);
+      const pos = mode === 'habituel' ? port : MODE_DEMO ? port : await positionActuelle(port);
+      if (!MODE_DEMO) {
+        const fin = mode === 'une-fois' ? new Date(Date.now() + DELAI_POSITION_MIN * 60000) : aujourdHuiA(Math.max(et.limiteRetrait, B.maintenantMartinique() + 30));
+        try { if (c.uuid) await B.envoyerMessage(c.uuid, 'pecheur', undefined, { libelle, lat: pos.lat, lon: pos.lon }, fin); await recharger(); } catch (err) { erreur(err); }
+        return;
+      }
       maj((x) => {
-        const c = x.convs[convId]; const et = x.etals.find((t) => t.id === c.etalId)!; const p = PORTS[et.port];
-        const libelle = mode === 'direct' ? 'En direct jusqu’à ' + heure(et.limiteRetrait) : mode === 'une-fois' ? 'Position envoyée à ' + heure(x.horloge) : 'Point de vente habituel · ' + et.lieu;
-        c.messages.push({ id: 'p' + Date.now(), auteur: 'pecheur', position: { libelle, lat: p.lat, lon: p.lon }, heure: tic(x) });
-        c.luClient = false; return x;
+        const cc = x.convs[convId];
+        cc.messages.push({ id: 'p' + Date.now(), auteur: 'pecheur', position: { libelle, lat: pos.lat, lon: pos.lon }, heure: tic(x) });
+        cc.luClient = false; return x;
       });
     },
     marquerLu(convId: string, role: Role) {
-      maj((x) => { const c = x.convs[convId]; if (!c) return x; if (role === 'client') c.luClient = true; else c.luPecheur = true; return x; });
+      const c = ref.current.convs[convId];
+      maj((x) => { const cc = x.convs[convId]; if (!cc) return x; if (role === 'client') cc.luClient = true; else cc.luPecheur = true; return x; });
+      if (!MODE_DEMO && c?.uuid) B.marquerLu(c.uuid, role === 'client' ? 'client' : 'pecheur').catch(() => {});
     },
 
-    // --- Espace pêcheur ---
-    publierArrivage(etalId: string, lignes: { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] }[]) {
+    // ───────── Espace pêcheur ─────────
+    async publierArrivage(etalId: string, lignes: { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] }[], photo?: { uri: string; type?: string }): Promise<boolean> {
+      if (!MODE_DEMO) {
+        try {
+          const url = photo ? await B.envoyerPhoto(etalId, photo.uri, photo.type) : undefined;
+          await B.publierArrivage(etalId, lignes, url); await recharger(); return true;
+        } catch (err) { erreur(err); return false; }
+      }
       maj((x) => {
         const et = x.etals.find((t) => t.id === etalId)!;
         et.produits = lignes.filter((l) => l.dispoKg > 0).map((l, i) => ({ id: etalId + '-' + i + '-' + Date.now(), espece: l.espece, prixKg: l.prixKg, dispoKg: l.dispoKg, preparations: l.preparations }));
+        if (photo) et.photo = photo.uri;
         et.debarque = x.horloge; return x;
       });
+      return true;
     },
-    validerPesee(code: string, poids: number[]) {
+    async validerPesee(code: string, poids: number[]): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.validerPesee(code, poids); await recharger(); return true; } catch (err) { erreur(err); return false; } }
       maj((x) => {
         const b = x.bons.find((y) => y.code === code)!;
         b.lignes.forEach((l, i) => (l.kg = poids[i]));
-        b.montantPaye = Math.round((sousTotal(b.lignes) + 0.9) * 100) / 100;
+        b.montantPaye = Math.round((sousTotal(b.lignes) + FRAIS_SERVICE + (b.livraison?.frais ?? 0)) * 100) / 100;
         b.statut = 'retire'; return x;
       });
+      return true;
+    },
+
+    // ───────── Mon compte (données personnelles) ─────────
+    async suivre(espece: string, oui: boolean) {
+      maj((x) => ({ ...x, suivis: oui ? [...new Set([...x.suivis, espece])] : x.suivis.filter((s) => s !== espece) }));
+      if (!MODE_DEMO) { try { await B.suivre(espece, oui); } catch (err) { erreur(err); } }
+    },
+    async exporterDonnees(): Promise<object | null> {
+      if (MODE_DEMO) { const x = ref.current; return { exporte_le: new Date().toISOString(), mode: 'démo (données stockées sur ce téléphone uniquement)', session: x.session, bons: x.bons.filter((b) => b.client === 'Vous'), conversations: Object.values(x.convs).filter((c) => c.client === 'Vous'), especes_suivies: x.suivis }; }
+      try { return await B.exporterDonnees(); } catch (err) { erreur(err); return null; }
+    },
+    async supprimerCompte(): Promise<boolean> {
+      if (MODE_DEMO) { setE(etatInitial()); await AsyncStorage.removeItem(CLE); return true; }
+      try { await B.supprimerCompte(); setE((x) => ({ ...etatInitial(), etals: x.etals })); await AsyncStorage.removeItem(CLE); return true; } catch (err) { erreur(err); return false; }
     },
   }), []);
 
   const sel = useMemo(() => ({
     etal: (id?: string) => e.etals.find((t) => t.id === id),
-    frais: (t: Etal) => e.horloge - t.debarque < 60,
-    depuis: (t: Etal) => { const d = e.horloge - t.debarque; return d < 60 ? 'il y a ' + d + ' min' : 'il y a ' + Math.floor(d / 60) + ' h' + (d % 60 ? ' ' + String(d % 60).padStart(2, '0') : ''); },
-    km: (t: Etal) => distanceKm(PORTS[e.commune], PORTS[t.port] ?? PORTS['Le Robert']),
+    frais: (t: Etal) => e.horloge - t.debarque >= 0 && e.horloge - t.debarque < 60,
+    depuis: (t: Etal) => { const d = e.horloge - t.debarque; if (d < 0 || d > 20 * 60) return 'hier ou avant'; return d < 60 ? 'il y a ' + d + ' min' : 'il y a ' + Math.floor(d / 60) + ' h' + (d % 60 ? ' ' + String(d % 60).padStart(2, '0') : ''); },
+    km: (t: Etal) => distanceKm(PORTS[e.commune] ?? PORTS['Le Robert'], PORTS[t.port] ?? PORTS['Le Robert']),
     minPrix: (t: Etal) => { const d = t.produits.filter((p) => p.dispoKg > 0); return d.length ? Math.min(...d.map((p) => p.prixKg)) : null; },
     kgPanier: (etalId: string, produitId: string) => (e.panier?.etalId === etalId ? e.panier.lignes.find((l) => l.produitId === produitId)?.kg ?? 0 : 0),
     creneaux: creneauxDe,
@@ -249,7 +420,7 @@ function useMagasin() {
     mesDemandes: () => e.demandes.filter((d) => d.auteur === 'Vous'),
     // un pro ne voit pas ses propres besoins ici ; en démo, le pêcheur voit aussi ceux publiés depuis ce téléphone
     demandesOuvertes: () => e.demandes.filter((d) => d.statut === 'ouverte' && !(e.session?.pro && d.auteur === 'Vous')),
-    bonsPecheur: (etalId?: string) => e.bons.filter((b) => b.etalId === etalId),
+    bonsPecheur: (etalId?: string) => e.bons.filter((b) => b.etalId === etalId && b.statut !== 'a_payer'),
     nonLusClient: () => Object.values(e.convs).filter((c) => c.client === 'Vous' && !c.luClient).length,
     nonLusPecheur: (etalId?: string) => Object.values(e.convs).filter((c) => c.etalId === etalId && !c.luPecheur).length,
     resume: (lignes: LignePanier[]) => lignes.map((l) => l.espece + ' ' + kg(l.kg)).join(', '),

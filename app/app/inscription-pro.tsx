@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, Chip, Logo, T } from '../src/components/ui';
 import { PORTS } from '../src/data/demo';
-import { useApp } from '../src/store';
+import { MODE_DEMO, useApp } from '../src/store';
 import { couleurs as c, polices as f } from '../src/theme';
 import type { InfosPro } from '../src/types';
 
@@ -48,7 +48,7 @@ export default function InscriptionPro() {
         </View>
         <Champ libelle="Adresse de livraison (facultatif)" valeur={adresse} onChange={setAdresse} exemple="Ex. 12 rue Schoelcher, Le Robert" />
         <Bouton titre="Créer mon compte pro" desactive={!complet}
-          onPress={() => { app.connecterPro(tel ?? '', prenom.trim(), { raison: raison.trim(), type, siret: siret.replace(/\D/g, ''), commune, adresse: adresse.trim() || undefined }); router.replace('/(client)'); }} />
+          onPress={async () => { await app.connecterPro(tel ?? '', prenom.trim(), { raison: raison.trim(), type, siret: siret.replace(/\D/g, ''), commune, adresse: adresse.trim() || undefined }); router.replace(MODE_DEMO ? '/(client)' : '/'); }} />
         <Bouton clair titre="Retour" onPress={() => router.replace('/connexion')} />
       </ScrollView>
     </SafeAreaView>

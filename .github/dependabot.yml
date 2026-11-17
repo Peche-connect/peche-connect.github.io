@@ -1,0 +1,16 @@
+# Dependabot : alerte et propose une mise à jour quand une bibliothèque utilisée a une faille connue.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      expo:
+        patterns: ["expo*", "@expo/*", "react-native*", "@react-native*"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly

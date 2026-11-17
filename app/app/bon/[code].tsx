@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcCarte } from '../../src/components/icones';
@@ -8,18 +8,37 @@ import { QR } from '../../src/components/QR';
 import { Bouton, EnTete, Ligne, Pastille, T, Vide } from '../../src/components/ui';
 import { PORTS } from '../../src/data/demo';
 import { detailTva, euro, kg, TVA_PRODUITS_MER } from '../../src/format';
-import { useApp } from '../../src/store';
+import { MODE_DEMO, useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
 export default function BonEcran() {
-  const { code } = useLocalSearchParams<{ code: string }>();
+  const { code, paye } = useLocalSearchParams<{ code: string; paye?: string }>();
   const app = useApp();
   const [iti, setIti] = useState(false);
+  const [qr, setQr] = useState('');
   const b = app.e.bons.find((x) => x.code === code);
-  if (!b) return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Bon de retrait" fermer /><Vide titre="Bon introuvable" texte="Retrouvez vos réservations dans « Mes bons »." /></SafeAreaView>;
-  const e = app.etal(b.etalId)!;
-  const p = PORTS[e.port];
+  const statut = b?.statut;
+  useEffect(() => { if (b && statut === 'reserve') app.lienQr(b.code).then(setQr); }, [code, statut]);
+  // retour de la page de paiement : le serveur confirme en quelques secondes
+  useEffect(() => { if (!MODE_DEMO && paye && (!b || statut === 'a_payer')) { const t = setInterval(app.recharger, 2500); return () => clearInterval(t); } }, [paye, statut, !!b]);
+  if (!b) return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Bon de retrait" fermer /><Vide titre={paye ? 'Paiement en cours de confirmation…' : 'Bon introuvable'} texte={paye ? 'Votre bon s’affiche dans quelques secondes.' : 'Retrouvez vos réservations dans « Mes bons ».'} /></SafeAreaView>;
+  const e = app.etal(b.etalId);
+  if (!e) return <SafeAreaView style={{ flex: 1 }}><EnTete titre={'Bon ' + b.code} fermer /><Vide titre="Étal indisponible" texte="Ce pêcheur n’est plus sur Pêche Connect. Votre bon reste dans « Mes bons »." /></SafeAreaView>;
+  const p = PORTS[e.port] ?? PORTS['Le Robert'];
   const retire = b.statut === 'retire';
+  if (b.statut === 'a_payer') return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
+      <EnTete titre={'Commande ' + b.code} sousTitre={'Étal de ' + e.pecheur + ' · ' + e.port} fermer />
+      <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
+        <T tresGras style={{ fontSize: 20 }}>{paye ? 'Paiement en cours de confirmation…' : 'À régler pour confirmer'}</T>
+        {b.lignes.map((l, i) => <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T>{l.espece}</T><T tresGras>{kg(l.kg)}</T></View>)}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>Montant bloqué (max)</T><T tresGras>{euro(b.montantBloque)}</T></View>
+        <T gris>Comme pour une réservation, seul le poids réel est débité à la pesée.</T>
+        {paye ? null : <Bouton titre={'Payer ' + euro(b.montantBloque) + ' max'} onPress={() => app.payerBon(b.code)} />}
+        <Bouton clair titre="Message" onPress={() => router.push({ pathname: '/chat/[id]', params: { id: e.id + '|Vous' } })} />
+      </ScrollView>
+    </SafeAreaView>
+  );
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
@@ -38,7 +57,7 @@ export default function BonEcran() {
               <T tresGras style={{ fontSize: 50, letterSpacing: -1 }}>{b.code}</T>
               <Pastille texte={'Aujourd’hui · ' + b.creneau} />
             </View>
-            <QR code={b.code} />
+            {retire ? null : <QR contenu={qr} />}
           </View>
           <Pastille texte={retire ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) : 'À retirer · en attente de pesée'} style={retire ? { backgroundColor: '#dff3ea' } : { backgroundColor: c.doux }} />
           <Ligne />
@@ -72,7 +91,7 @@ export default function BonEcran() {
         <View style={{ flexDirection: 'row', gap: 12, padding: 16 }}>
           <IcCarte />
           <View style={{ flex: 1, gap: 2 }}>
-            <T tresGras style={{ fontSize: 16 }}>{e.lieu}</T>
+            <T tresGras style={{ fontSize: 16 }}>{e.lieu ?? 'Adresse affichée après confirmation du paiement'}</T>
             <T gris>{e.pecheur} · {e.precision}</T>
           </View>
         </View>

@@ -1,13 +1,15 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Image, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcCompte, IcMicro, IcPhoto } from '../../src/components/icones';
 import { Bouton, Chip, Feuille, Logo, Rond, Stepper, T } from '../../src/components/ui';
 import { ESPECES } from '../../src/data/demo';
+import { lireDictee } from '../../src/dictee';
+import { fermeture } from '../../src/data/fermetures';
 import { euro, heure, kg } from '../../src/format';
 import { useApp } from '../../src/store';
-import { couleurs as c } from '../../src/theme';
+import { couleurs as c, polices as f } from '../../src/theme';
 
 type L = { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] };
 
@@ -19,11 +21,51 @@ export default function Arrivage() {
   const [lignes, setLignes] = useState<L[]>([]);
   const [ajout, setAjout] = useState(false);
   const [publie, setPublie] = useState(false);
+  const [envoi, setEnvoi] = useState(false);
+  const [photo, setPhoto] = useState<{ uri: string; type?: string } | null>(null);
+  const [dictee, setDictee] = useState(false);
+  const [texte, setTexte] = useState('');
+  const [ecoute, setEcoute] = useState(false);
+  const [info, setInfo] = useState('');
   useEffect(() => { setLignes(e.produits.map((p) => ({ espece: p.espece, prixKg: p.prixKg, dispoKg: p.dispoKg, preparations: p.preparations }))); }, [e.id]);
   const total = lignes.reduce((t, l) => t + l.dispoKg, 0);
   const aPreparer = app.bonsPecheur(s.etalId).filter((b) => b.statut === 'reserve').length;
   const maj = (i: number, f: (l: L) => L) => setLignes((ls) => ls.map((l, j) => (j === i ? f(l) : l)));
-  const bientot = (quoi: string) => (Platform.OS === 'web' ? undefined : Alert.alert(quoi, 'Bientôt disponible.'));
+
+  // Photo de la pêche : appareil photo du téléphone (ou galerie)
+  const prendrePhoto = async () => {
+    const IP = await import('expo-image-picker');
+    if (Platform.OS !== 'web') { const p = await IP.requestCameraPermissionsAsync(); if (!p.granted) { setInfo('Autorisez l’appareil photo dans les réglages du téléphone.'); return; } }
+    const r = await IP.launchCameraAsync({ mediaTypes: ['images'], quality: 0.6, allowsEditing: true, aspect: [4, 3] }).catch(() => IP.launchImageLibraryAsync({ mediaTypes: ['images'], quality: 0.6 }));
+    if (!r.canceled && r.assets[0]) setPhoto({ uri: r.assets[0].uri, type: r.assets[0].mimeType ?? 'image/jpeg' });
+  };
+
+  // Dictée : reconnaissance vocale du navigateur (Chrome, Safari) ; dans l'appli, le micro du clavier
+  const Reco = Platform.OS === 'web' && typeof window !== 'undefined' ? ((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition) : null;
+  const ecouter = () => {
+    if (!Reco) return;
+    const r = new Reco(); r.lang = 'fr-FR'; r.interimResults = false; r.continuous = true;
+    r.onresult = (ev: any) => { const t = Array.from(ev.results as ArrayLike<any>).map((x: any) => x[0].transcript).join(' '); setTexte((v) => (v ? v + ' ' : '') + t); };
+    r.onend = () => setEcoute(false); r.onerror = () => setEcoute(false);
+    r.start(); setEcoute(true);
+    setTimeout(() => { try { r.stop(); } catch { /* déjà arrêté */ } }, 20000);
+  };
+  const remplir = () => {
+    const lu = lireDictee(texte, ESPECES.filter((x) => !fermeture(x)));
+    if (!lu.length) { setInfo('Aucune espèce reconnue. Exemple : « thon jaune 12 kilos à 14 euros ».'); return; }
+    setLignes((ls) => {
+      const n = [...ls];
+      lu.forEach((d) => {
+        const i = n.findIndex((l) => l.espece === d.espece);
+        const base = i >= 0 ? n[i] : { espece: d.espece, prixKg: 12, dispoKg: 5, preparations: [{ nom: 'Entier', supplementKg: 0 }] };
+        const l = { ...base, dispoKg: d.dispoKg ?? base.dispoKg, prixKg: d.prixKg ?? base.prixKg };
+        if (i >= 0) n[i] = l; else n.push(l);
+      });
+      return n;
+    });
+    setInfo(lu.length + ' espèce' + (lu.length > 1 ? 's' : '') + ' remplie' + (lu.length > 1 ? 's' : '') + ' : vérifiez puis mettez en vente.');
+    setDictee(false); setTexte('');
+  };
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.fond }}>
@@ -40,9 +82,13 @@ export default function Arrivage() {
       </View>
       <ScrollView contentContainerStyle={{ padding: 16, gap: 4 }}>
         <View style={{ flexDirection: 'row', gap: 10, marginBottom: 6 }}>
-          <Pressable onPress={() => bientot('Photo de la pêche')} style={{ flex: 1, minHeight: 70, borderRadius: 14, backgroundColor: c.doux, alignItems: 'center', justifyContent: 'center', gap: 6 }}><IcPhoto /><T gras>Photo de la pêche</T></Pressable>
-          <Pressable onPress={() => bientot('Dicter l’arrivage')} style={{ flex: 1, minHeight: 70, borderRadius: 14, backgroundColor: c.doux, alignItems: 'center', justifyContent: 'center', gap: 6 }}><IcMicro /><T gras>Dicter l’arrivage</T></Pressable>
+          <Pressable onPress={prendrePhoto} style={{ flex: 1, minHeight: 70, borderRadius: 14, backgroundColor: c.doux, alignItems: 'center', justifyContent: 'center', gap: 6, overflow: 'hidden' }}>
+            {photo ? <Image source={{ uri: photo.uri }} style={{ position: 'absolute', left: 0, top: 0, right: 0, bottom: 0, opacity: 0.35 }} resizeMode="cover" /> : null}
+            <IcPhoto /><T gras>{photo ? 'Photo ajoutée ✓' : 'Photo de la pêche'}</T>
+          </Pressable>
+          <Pressable onPress={() => { setDictee(true); setInfo(''); }} style={{ flex: 1, minHeight: 70, borderRadius: 14, backgroundColor: c.doux, alignItems: 'center', justifyContent: 'center', gap: 6 }}><IcMicro /><T gras>Dicter l’arrivage</T></Pressable>
         </View>
+        {info ? <T gras style={{ color: c.marine, marginBottom: 4 }}>{info}</T> : null}
         {lignes.map((l, i) => (
           <View key={l.espece} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
             <View style={{ flex: 1, gap: 6 }}>
@@ -61,16 +107,27 @@ export default function Arrivage() {
         {publie ? <T gras style={{ color: c.vert, marginTop: 8 }}>Arrivage publié : les clients le voient tout de suite.</T> : null}
       </ScrollView>
       <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: c.ligne }}>
-        <Bouton titre="Mettre en vente" desactive={!total} droite={<T gras style={{ color: '#fff', opacity: 0.8 }}>{kg(total)} · {lignes.length} espèce{lignes.length > 1 ? 's' : ''}</T>}
-          onPress={() => { app.publierArrivage(e.id, lignes); setPublie(true); }} />
+        <Bouton titre="Mettre en vente" desactive={!total || envoi} droite={<T gras style={{ color: '#fff', opacity: 0.8 }}>{kg(total)} · {lignes.length} espèce{lignes.length > 1 ? 's' : ''}</T>}
+          onPress={async () => { setEnvoi(true); const ok = await app.publierArrivage(e.id, lignes, photo ?? undefined); setEnvoi(false); if (ok) { setPublie(true); setPhoto(null); } }} />
       </View>
+      <Feuille visible={dictee} onFermer={() => setDictee(false)} titre="Dicter l’arrivage">
+        <T gris style={{ marginBottom: 10 }}>Dites les espèces, les kilos et les prix. Exemple : « thon jaune 12 kilos à 14 euros, vivaneau 5 kilos à 16 euros ».</T>
+        {Reco ? <Bouton titre={ecoute ? 'J’écoute… parlez' : '🎙 Parler'} clair={ecoute} onPress={ecouter} desactive={ecoute} style={{ marginBottom: 10 }} />
+          : <T gris petit style={{ marginBottom: 8 }}>{Platform.OS === 'web' ? 'Ce navigateur ne reconnaît pas la voix : tapez le texte.' : 'Touchez le micro du clavier pour dicter.'}</T>}
+        <TextInput value={texte} onChangeText={setTexte} multiline placeholder="thon jaune 12 kilos à 14 euros…" placeholderTextColor={c.grisClair}
+          style={{ minHeight: 90, borderRadius: 12, backgroundColor: c.doux, padding: 12, fontSize: 16, fontFamily: f.normal, color: c.texte, textAlignVertical: 'top' }} />
+        <Bouton titre="Remplir mon arrivage" onPress={remplir} desactive={!texte.trim()} style={{ marginTop: 12 }} />
+      </Feuille>
       <Feuille visible={ajout} onFermer={() => setAjout(false)} titre="Ajouter une espèce">
-        {ESPECES.filter((x) => !lignes.some((l) => l.espece === x)).map((x) => (
-          <Pressable key={x} onPress={() => { setLignes((ls) => [...ls, { espece: x, prixKg: 12, dispoKg: 5, preparations: [{ nom: 'Entier', supplementKg: 0 }] }]); setAjout(false); }}
-            style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
-            <T tresGras>{x}</T><T tresGras>+</T>
-          </Pressable>
-        ))}
+        {ESPECES.filter((x) => !lignes.some((l) => l.espece === x)).map((x) => {
+          const f = fermeture(x); // période de fermeture : vente bloquée
+          return (
+            <Pressable key={x} disabled={!!f} onPress={() => { setLignes((ls) => [...ls, { espece: x, prixKg: 12, dispoKg: 5, preparations: [{ nom: 'Entier', supplementKg: 0 }] }]); setAjout(false); }}
+              style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 10, paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: c.ligne, opacity: f ? 0.5 : 1 }}>
+              <View style={{ flex: 1 }}><T tresGras>{x}</T>{f ? <T petit style={{ color: c.alerte }}>{f.motif}</T> : null}</View><T tresGras>{f ? 'Fermé' : '+'}</T>
+            </Pressable>
+          );
+        })}
       </Feuille>
     </SafeAreaView>
   );

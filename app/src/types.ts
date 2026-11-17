@@ -20,6 +20,7 @@ export type Etal = {
   debarque: number; // minutes depuis minuit
   limiteRetrait: number; // minutes depuis minuit
   produits: Produit[];
+  photo?: string; // photo de la pêche du jour (publiée par le pêcheur)
   // Adresse exacte : visible seulement après paiement (règle anti-contournement)
   lieu?: string;
   precision?: string;
@@ -29,7 +30,7 @@ export type LignePanier = { produitId: string; espece: string; kg: number; prixK
 
 export type Panier = { etalId: string; lignes: LignePanier[] } | null;
 
-export type StatutBon = 'reserve' | 'retire' | 'annule';
+export type StatutBon = 'a_payer' | 'reserve' | 'retire' | 'annule'; // « a_payer » : commande de pro acceptée, pas encore réglée
 
 export type InfosPro = { raison: string; type: 'Restaurant' | 'Poissonnerie' | 'Revendeur' | 'Traiteur'; siret: string; commune: string; adresse?: string };
 
@@ -51,6 +52,7 @@ export type Bon = {
   montantBloque: number;
   montantPaye?: number;
   creeLe: number;
+  date?: string; // date de création (mode réel), pour le relevé mensuel
 };
 
 export type Message = {
@@ -61,6 +63,6 @@ export type Message = {
   heure: number;
 };
 
-export type Conversation = { id: string; etalId: string; client: string; bon: string; messages: Message[]; luClient: boolean; luPecheur: boolean };
+export type Conversation = { id: string; uuid?: string; etalId: string; client: string; bon: string; messages: Message[]; luClient: boolean; luPecheur: boolean };
 
 export type Session = { telephone: string; role: Role; prenom: string; pro?: InfosPro; etalId?: string; statutPecheur?: 'en_attente' | 'verifie'; stripePret?: boolean } | null;

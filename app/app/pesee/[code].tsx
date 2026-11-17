@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, EnTete, Ligne, Stepper, T, Vide } from '../../src/components/ui';
@@ -9,19 +9,26 @@ import { couleurs as c } from '../../src/theme';
 
 // Pesée devant le client : seul le poids réel est encaissé (capture Stripe en production)
 export default function Pesee() {
-  const { code } = useLocalSearchParams<{ code: string }>();
+  // « s » : signature lue dans le QR code du client (le pêcheur scanne le QR avec son appareil photo)
+  const { code, s: signature } = useLocalSearchParams<{ code: string; s?: string }>();
   const app = useApp();
   const b = app.e.bons.find((x) => x.code === code);
   const [poids, setPoids] = useState<number[]>(b ? b.lignes.map((l) => l.kg) : []);
-  if (!b) return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Pesée" /><Vide titre="Bon introuvable" texte="Revenez aux réservations." /></SafeAreaView>;
-  const lignesPesees = b.lignes.map((l, i) => ({ ...l, kg: poids[i] }));
-  const montant = Math.round((sousTotal(lignesPesees) + FRAIS_SERVICE) * 100) / 100;
+  const [qr, setQr] = useState<{ ok: boolean; message: string } | null>(null);
+  const [envoi, setEnvoi] = useState(false);
+  useEffect(() => { if (b && poids.length !== b.lignes.length) setPoids(b.lignes.map((l) => l.kg)); }, [b?.lignes.length]);
+  useEffect(() => { if (signature && code) app.verifierQr(code, signature).then(setQr); }, [code, signature]);
+  if (app.e.session?.role !== 'pecheur') return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Pesée" /><Vide titre="Réservé au pêcheur" texte="Ce QR code se scanne depuis l’espace pêcheur de Pêche Connect." /></SafeAreaView>;
+  if (!b) return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Pesée" /><Vide titre="Bon introuvable" texte={qr && !qr.ok ? qr.message : 'Ce bon n’est pas pour votre étal. Revenez aux réservations.'} /></SafeAreaView>;
+  const lignesPesees = b.lignes.map((l, i) => ({ ...l, kg: poids[i] ?? l.kg }));
+  const montant = Math.round((sousTotal(lignesPesees) + FRAIS_SERVICE + (b.livraison?.frais ?? 0)) * 100) / 100;
   const trop = montant > b.montantBloque + 0.001;
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
       <EnTete titre={'Pesée · ' + b.code} sousTitre={(b.client === 'Vous' ? 'Client démo' : b.client) + ' · ' + b.creneau} />
       <ScrollView>
+        {qr ? <View style={{ margin: 16, marginBottom: 0, padding: 12, borderRadius: 12, backgroundColor: qr.ok ? '#dff3ea' : '#fde7dc' }}><T gras style={{ color: qr.ok ? c.vert : c.alerte }}>{qr.ok ? '✓ ' : '✕ '}{qr.message}</T></View> : null}
         {b.statut === 'retire' ? (
           <Vide titre="Vente clôturée" texte={'Encaissé : ' + euro(b.montantPaye ?? 0) + '. Le reste de l’empreinte a été libéré.'} />
         ) : (
@@ -43,7 +50,8 @@ export default function Pesee() {
       </ScrollView>
       {b.statut === 'retire' ? null : (
         <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: c.ligne }}>
-          <Bouton titre={'Valider la pesée · ' + euro(montant)} desactive={trop} onPress={() => { app.validerPesee(b.code, poids); router.back(); }} />
+          <Bouton titre={envoi ? 'Encaissement…' : poids.every((p) => p === 0) ? 'Annuler : rien à remettre' : 'Valider la pesée · ' + euro(montant)} desactive={trop || envoi || (qr !== null && !qr.ok)}
+            onPress={async () => { setEnvoi(true); const ok = await app.validerPesee(b.code, poids); setEnvoi(false); if (ok) router.canGoBack() ? router.back() : router.replace('/(pecheur)/reservations'); }} />
         </View>
       )}
     </SafeAreaView>
