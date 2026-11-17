@@ -23,6 +23,7 @@ async function page(nom) {
   const ctx = await navigateur.newContext({ viewport: { width: 390, height: 844 }, permissions: ['microphone'], acceptDownloads: true });
   const p = await ctx.newPage();
   p.on('pageerror', (e) => erreurs.push(nom + ' : ' + e.message));
+  p.on('console', (m) => { if (/Content Security Policy|Refused to/.test(m.text())) erreurs.push(nom + ' (CSP) : ' + m.text()); });
   // la page de paiement Stripe (factice) n'est pas ouverte : le paiement est simulé plus bas
   await ctx.route('https://checkout.stripe.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<h1>Paiement Stripe (test)</h1>' }));
   return p;

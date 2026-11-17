@@ -1,7 +1,7 @@
 // Réservations : panier vérifié côté serveur, empreinte bancaire Stripe, QR signé, pesée et encaissement
 // du poids réel, commandes des pros (besoins).
 import { onCall } from 'firebase-functions/v2/https';
-import { centimes, connecte, db, erreur, FieldValue, journal, QR_SECRET, REGION, reglages, site, stripe, STRIPE_SECRET_KEY } from './commun';
+import { centimes, connecte, db, erreur, FieldValue, journal, QR_SECRET, reglages, site, stripe, STRIPE_SECRET_KEY, APPEL, limiter } from './commun';
 import { notifier } from './notifier';
 import { montantBloque, montantsPesee, signatureValide } from './regles';
 
@@ -47,8 +47,9 @@ export async function annulerBon(code: string) {
   });
 }
 
-export const creerReservation = onCall({ region: REGION, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const creerReservation = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'reservation', 10);
   const d = req.data as { etalId: string; lignes: { produitId: string; kg: number; preparation: string }[]; creneau: string; livraison?: boolean };
   if (typeof d.etalId !== 'string' || !Array.isArray(d.lignes) || !d.lignes.length || d.lignes.length > 20) throw erreur('invalid-argument', 'Panier invalide.');
   const compteStripe = (await db.doc('comptesStripe/' + d.etalId).get()).data()?.compte as string | undefined;
@@ -77,6 +78,9 @@ export const creerReservation = onCall({ region: REGION, secrets: [STRIPE_SECRET
     const livraison = d.livraison && infosPro && totalKg >= r.livraisonMinKg
       ? { adresse: infosPro.adresse || infosPro.raison + ', ' + infosPro.commune, frais: r.fraisLivraison } : null;
     const creneau = String(d.creneau ?? 'Avant 10 h').slice(0, 40);
+    // anti-abus : pas plus de 2 réservations non payées à la fois (sinon on bloquerait le poisson des autres)
+    const enAttente = await t.get(db.collection('bons').where('clientId', '==', uid).where('statut', '==', 'en_attente_paiement').where('origine', '==', 'panier'));
+    if (enAttente.size >= 2) throw erreur('resource-exhausted', 'Vous avez déjà 2 réservations en attente de paiement : réglez-les ou attendez 30 minutes.');
     const c = await prochainCode(t);
     t.update(etalRef, { produits });
     t.set(db.doc('bons/' + c), {
@@ -101,8 +105,9 @@ export const creerReservation = onCall({ region: REGION, secrets: [STRIPE_SECRET
 });
 
 // Régler un bon pas encore payé (commande de pro acceptée, ou paiement interrompu)
-export const payerBon = onCall({ region: REGION, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const payerBon = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'payer', 10);
   const code = String((req.data as { code: string }).code);
   const b = (await db.doc('bons/' + code).get()).data();
   if (!b || b.clientId !== uid) throw erreur('not-found', 'Bon introuvable.');
@@ -115,8 +120,9 @@ export const payerBon = onCall({ region: REGION, secrets: [STRIPE_SECRET_KEY] },
 });
 
 // Contenu du QR : seul le client du bon reçoit la signature
-export const monQr = onCall({ region: REGION }, async (req) => {
+export const monQr = onCall(APPEL, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'qr', 120);
   const code = String((req.data as { code: string }).code);
   const b = (await db.doc('bons/' + code).get()).data();
   if (!b || b.clientId !== uid || !['reserve', 'en_livraison'].includes(b.statut)) return { signature: null };
@@ -124,8 +130,9 @@ export const monQr = onCall({ region: REGION }, async (req) => {
 });
 
 // Le pêcheur scanne le QR du client : signature et étal vérifiés
-export const verifierBon = onCall({ region: REGION, secrets: [QR_SECRET] }, async (req) => {
+export const verifierBon = onCall({ ...APPEL, secrets: [QR_SECRET] }, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'verifier', 60);
   const { code, signature } = req.data as { code: string; signature: string };
   const b = (await db.doc('bons/' + String(code)).get()).data();
   if (!b || !signatureValide(QR_SECRET.value(), b.code, b.code, String(signature ?? ''))) {
@@ -138,8 +145,9 @@ export const verifierBon = onCall({ region: REGION, secrets: [QR_SECRET] }, asyn
 });
 
 // Pesée devant le client : capture du poids réel ; tout à 0 kg = empreinte annulée, rien de débité
-export const validerPesee = onCall({ region: REGION, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const validerPesee = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'pesee', 60);
   const { code, poids } = req.data as { code: string; poids: number[] };
   const ref = db.doc('bons/' + String(code));
   const b = (await ref.get()).data();
@@ -177,8 +185,9 @@ export async function ouvrirConversation(etalId: string, pecheurId: string, clie
 }
 
 // Un pêcheur répond « Je peux fournir » au besoin d'un pro : commande créée, à régler par le pro
-export const accepterDemande = onCall({ region: REGION }, async (req) => {
+export const accepterDemande = onCall(APPEL, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'demande', 30);
   const id = String((req.data as { id: string }).id);
   const e = await db.collection('etals').where('pecheurId', '==', uid).limit(1).get();
   const etal = e.empty ? null : e.docs[0];

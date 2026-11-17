@@ -2,14 +2,15 @@
 // photo de la pêche, alerte aux clients qui suivent ces espèces.
 import { getDownloadURL, getStorage } from 'firebase-admin/storage';
 import { onCall } from 'firebase-functions/v2/https';
-import { connecte, db, erreur, FieldValue, REGION } from './commun';
+import { connecte, db, erreur, FieldValue, APPEL, limiter } from './commun';
 import { notifier } from './notifier';
 import { fermetureActive, FERMETURES_CONNUES, type Fermeture } from './regles';
 
 type L = { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] };
 
-export const publierArrivage = onCall({ region: REGION }, async (req) => {
+export const publierArrivage = onCall(APPEL, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'arrivage', 30);
   const d = req.data as { lignes: L[]; photoChemin?: string; limiteRetrait?: number };
   const q = await db.collection('etals').where('pecheurId', '==', uid).limit(1).get();
   if (q.empty) throw erreur('permission-denied', 'Réservé aux pêcheurs.');

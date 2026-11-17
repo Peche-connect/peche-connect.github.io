@@ -4,6 +4,7 @@
 // (app/firebase/firestore.rules et storage.rules) et des fonctions serveur. Aucune clé secrète ici.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import {
   connectAuthEmulator, getAuth, GoogleAuthProvider, initializeAuth, isSignInWithEmailLink, OAuthProvider, onAuthStateChanged,
   sendSignInLinkToEmail, signInWithEmailLink, signInWithPopup, signInWithRedirect, signOut, type Auth, type User,
@@ -13,7 +14,7 @@ import {
   query, serverTimestamp, Timestamp, updateDoc, where, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions } from 'firebase/functions';
-import { connectStorageEmulator, getBlob, getDownloadURL, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
+import { connectStorageEmulator, getBlob, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
 import type { Bon, Conversation, Demande, Etal, InfosPro, LignePanier, Message, Session } from '../types';
 
@@ -46,6 +47,11 @@ function init() {
   _db = getFirestore(app);
   _fn = getFunctions(app, 'europe-west9');
   _st = getStorage(app);
+  // Anti-robots (App Check) : prouve au serveur que l'appel vient bien du site officiel (reCAPTCHA invisible)
+  const cleRecaptcha = process.env.EXPO_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
+  if (Platform.OS === 'web' && cleRecaptcha && !EMULATEUR) {
+    initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(cleRecaptcha), isTokenAutoRefreshEnabled: true });
+  }
   if (EMULATEUR) {
     connectAuthEmulator(_auth, 'http://' + EMULATEUR + ':9099', { disableWarnings: true });
     connectFirestoreEmulator(_db, EMULATEUR, 8080);
@@ -295,11 +301,19 @@ export async function envoyerAudio(conv: string, auteur: 'client' | 'pecheur', a
   await essai(() => addDoc(collection(db(), 'conversations', conv, 'messages'), { auteurId: uid, auteur, audio: { chemin, duree: Math.max(1, Math.min(120, Math.round(a.duree))) }, creeLe: serverTimestamp() }));
 }
 // Adresse d'écoute d'un message vocal (fichier privé : droits vérifiés par les règles)
+// Le fichier est téléchargé avec le jeton de connexion de la personne : aucun lien partageable n'est créé.
 export async function lienAudio(chemin: string) {
   init();
   const r = ref(_st, 'messages-audio/' + chemin);
   if (Platform.OS === 'web') return URL.createObjectURL(await getBlob(r));
-  return getDownloadURL(r);
+  const u = await utilisateur();
+  if (!u) throw new ErreurServeur('Session expirée, reconnectez-vous.');
+  const FS = await import('expo-file-system');
+  const local = FS.cacheDirectory + 'vocal-' + chemin.replace(/[^A-Za-z0-9_.-]/g, '_');
+  const url = (EMULATEUR ? 'http://' + EMULATEUR + ':9199' : 'https://firebasestorage.googleapis.com') + '/v0/b/' + r.bucket + '/o/' + encodeURIComponent(r.fullPath) + '?alt=media';
+  const res = await FS.downloadAsync(url, local, { headers: { Authorization: 'Firebase ' + (await u.getIdToken()) } });
+  if (res.status !== 200) throw new ErreurServeur('Message vocal indisponible.');
+  return res.uri;
 }
 export async function marquerLu(conv: string, role: 'client' | 'pecheur') {
   await updateDoc(doc(db(), 'conversations', conv), role === 'client' ? { luClient: true } : { luPecheur: true });

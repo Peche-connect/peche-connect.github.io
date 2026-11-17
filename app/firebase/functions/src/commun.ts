@@ -13,6 +13,11 @@ export { FieldValue, Timestamp };
 // Serveurs à Paris (même région que la base)
 export const REGION = 'europe-west9';
 
+// Anti-robots (Firebase App Check) : seuls le site et l'appli officiels peuvent appeler les fonctions.
+// Désactivé seulement dans les émulateurs (tests) ; « APPCHECK=desactive » dans functions/.env en dépannage.
+export const APPCHECK = process.env.FUNCTIONS_EMULATOR !== 'true' && process.env.APPCHECK !== 'desactive';
+export const APPEL = { region: REGION, enforceAppCheck: APPCHECK } as const;
+
 export const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 export const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
 export const STRIPE_WEBHOOK_SECRET_CONNECT = defineSecret('STRIPE_WEBHOOK_SECRET_CONNECT');
@@ -56,3 +61,14 @@ export async function journal(qui: string | null, quoi: string, details?: unknow
 
 // La Martinique est à UTC−4 toute l'année
 export const maintenantMartinique = () => { const d = new Date(); return (((d.getUTCHours() - 4) * 60 + d.getUTCMinutes()) % 1440 + 1440) % 1440; };
+
+// Limite de cadence par personne et par action (ex. 10 réservations par heure) : contre les abus et les robots
+export async function limiter(uid: string, action: string, max: number, fenetreSec = 3600) {
+  const ref = db.doc('limites/' + uid + '_' + action);
+  const maintenant = Date.now();
+  await db.runTransaction(async (t) => {
+    const recents = (((await t.get(ref)).data()?.horodatages ?? []) as number[]).filter((x) => x > maintenant - fenetreSec * 1000);
+    if (recents.length >= max) throw erreur('resource-exhausted', 'Trop de demandes en peu de temps. Réessayez dans quelques minutes.');
+    t.set(ref, { horodatages: [...recents, maintenant], maj: FieldValue.serverTimestamp() });
+  });
+}

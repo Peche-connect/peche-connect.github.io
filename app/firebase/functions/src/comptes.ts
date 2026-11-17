@@ -4,7 +4,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getStorage } from 'firebase-admin/storage';
 import { onDocumentWritten } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
-import { connecte, db, erreur, FieldValue, journal, REGION, site, stripe, STRIPE_SECRET_KEY } from './commun';
+import { connecte, db, erreur, FieldValue, journal, REGION, site, stripe, STRIPE_SECRET_KEY, APPEL, limiter } from './commun';
 
 const TYPES_PRO = ['Restaurant', 'Poissonnerie', 'Revendeur', 'Traiteur'];
 const texte = (v: unknown, min: number, max: number, nom: string) => {
@@ -14,8 +14,9 @@ const texte = (v: unknown, min: number, max: number, nom: string) => {
 };
 
 // Première connexion : « Particulier », « Professionnel » ou « Pêcheur »
-export const choisirRole = onCall({ region: REGION }, async (req) => {
+export const choisirRole = onCall(APPEL, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'role', 10);
   const d = req.data as { role: string; prenom: string; commune?: string; pro?: Record<string, string>; pecheur?: Record<string, string> };
   if (!['client', 'pro', 'pecheur'].includes(d.role)) throw erreur('invalid-argument', 'Rôle inconnu.');
   const prenom = texte(d.prenom, 1, 40, 'Prénom');
@@ -75,8 +76,9 @@ export const etalModifie = onDocumentWritten({ region: REGION, document: 'etals/
 });
 
 // Compte de paiement du pêcheur (Stripe Connect Express) : création, lien d'inscription, état
-export const comptePaiement = onCall({ region: REGION, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+export const comptePaiement = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
   const uid = connecte(req);
+  await limiter(uid, 'paiement', 20);
   const { action } = req.data as { action: 'lien' | 'etat' };
   const e = await db.collection('etals').where('pecheurId', '==', uid).limit(1).get();
   if (e.empty) throw erreur('not-found', 'Inscrivez-vous d’abord comme pêcheur.');
@@ -108,9 +110,10 @@ export const comptePaiement = onCall({ region: REGION, secrets: [STRIPE_SECRET_K
 });
 
 // « Mon compte » : télécharger mes données / supprimer mon compte
-export const compte = onCall({ region: REGION }, async (req) => {
+export const compte = onCall(APPEL, async (req) => {
   const uid = connecte(req);
   const { action } = req.data as { action: 'exporter' | 'supprimer' };
+  await limiter(uid, 'compte-' + action, action === 'exporter' ? 5 : 3);
   const profil = await db.doc('profils/' + uid).get();
   const etalQ = await db.collection('etals').where('pecheurId', '==', uid).limit(1).get();
   const etal = etalQ.empty ? null : etalQ.docs[0];

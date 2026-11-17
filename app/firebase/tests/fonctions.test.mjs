@@ -171,6 +171,28 @@ describe('Tâches automatiques', () => {
   });
 });
 
+describe('Protections contre les abus', () => {
+  test('pas plus de 2 réservations non payées à la fois', async () => {
+    const produit = (await lire('etals/' + etalId)).produits[0];
+    const resa = () => appeler('autre', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 0.1, preparation: 'Entier' }], creneau: 'Avant 10 h' });
+    await resa(); await resa();
+    await assert.rejects(resa(), /déjà 2 réservations en attente/);
+  });
+  test('cadence limitée par action (robot qui insiste)', async () => {
+    await compte('robot');
+    for (let i = 0; i < 10; i++) await appeler('robot', 'choisirRole', { role: 'client', prenom: 'Robot' + i });
+    await assert.rejects(appeler('robot', 'choisirRole', { role: 'client', prenom: 'Robot' }), /Trop de demandes/);
+  });
+  test('messages en rafale supprimés et signalés', async () => {
+    const conv = etalId + '_' + comptes.client.uid;
+    await Promise.all(Array.from({ length: 26 }, (_, i) => db.collection('conversations/' + conv + '/messages').add({ auteurId: comptes.client.uid, auteur: 'client', texte: 'spam ' + i, creeLe: Timestamp.now() })));
+    const ok = await attendre(async () => (await db.collection('journal').where('quoi', '==', 'messages en rafale bloqués').get()).size > 0, 20000);
+    assert.ok(ok, 'rafale signalée dans le journal');
+    const restants = (await db.collection('conversations/' + conv + '/messages').where('auteurId', '==', comptes.client.uid).get()).size;
+    assert.ok(restants < 26, 'des messages ont été supprimés (' + restants + ' restants)');
+  });
+});
+
 describe('Mon compte (RGPD)', () => {
   test('télécharger mes données', async () => {
     const d = await appeler('client', 'compte', { action: 'exporter' });
