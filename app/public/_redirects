@@ -1,0 +1,3 @@
+# Cloudflare Pages : tous les liens de l'appli (/bon/R-127, /pesee/…, /legal/…) ouvrent l'appli
+/demo/*  /  302
+/*  /index.html  200

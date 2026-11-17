@@ -1,129 +1,98 @@
-# Pêche Connect · mise en service (passer du mode démo au mode réel)
+# Pêche Connect · mise en service (le jour où la société a sa carte bancaire)
 
-Tout le code est prêt : base de données, règles d'accès, paiement Stripe Connect, QR signé, notifications,
-pages légales, suppression de compte. Ce qu'il reste demande **vos comptes** (Supabase, Stripe, Google, IONOS)
-et, pour Stripe, **la société créée** (SIRET, compte bancaire pro). Comptez une demi-journée.
+Tout est prêt dans le code et testé automatiquement à chaque envoi sur GitHub (91 tests serveur et un
+parcours complet client / pêcheur dans un vrai navigateur). Il ne reste qu'à **créer les comptes au nom
+de la société** et à brancher. Tant que ce n'est pas fait, le site reste en **mode démo** (rien ne casse).
 
-Tant que les étapes 1 et 7 ne sont pas faites, le site reste en **mode démo** (rien ne casse).
+Choix retenus : site sur **Cloudflare Pages**, serveur sur **Firebase** (Paris), paiement **Stripe Connect**,
+connexion **Google, Apple ou lien e-mail** (gratuits, plus de SMS), mails **Zoho** sur peche-connect.fr.
+
+Ce qu'il faut avant de commencer : le Kbis, le compte bancaire pro et sa carte, une adresse Gmail de la
+société (ex. pecheconnect.martinique@gmail.com) avec la **validation en deux étapes activée**.
 
 ---
 
-## 1. Base de données Supabase (15 min)
+## 1. Firebase (20 min)
 
-1. Créer un compte sur supabase.com, puis **New project** : nom `peche-connect`, région **West EU (Paris)**,
-   mot de passe fort (à garder dans un gestionnaire de mots de passe).
-2. **Database > Extensions** : activer `pg_cron` et `pg_net`.
-3. **SQL Editor** : coller puis exécuter, dans l'ordre :
-   - `app/supabase/migrations/20261117000000_schema.sql`
-   - `app/supabase/migrations/20261117000100_photos_chauffeur_taches.sql`
-   - `app/supabase/migrations/20261117000200_messages_vocaux.sql`
-4. **Project Settings > API** : noter le *Project URL* et la clé *anon public* (publique, sans danger).
-   La clé *service_role* est **secrète** : ne jamais la mettre dans l'appli ni sur GitHub.
+1. console.firebase.google.com avec le Gmail de la société → **Ajouter un projet** → nom `peche-connect`
+   (Google Analytics : non).
+2. **Passer au forfait Blaze** (paiement à l'usage) avec la carte de la société. C'est obligatoire pour
+   les fonctions serveur et les fichiers, mais on reste dans la partie gratuite. **Créer tout de suite une
+   alerte de budget à 10 €** (Google Cloud > Facturation > Budgets et alertes).
+3. **Firestore Database** → Créer → mode production → emplacement **europe-west9 (Paris)**.
+4. **Storage** → Commencer → même emplacement.
+5. **Authentication** → Commencer → Méthodes de connexion : activer **Google** et **Adresse e-mail /
+   Lien par e-mail (connexion sans mot de passe)**. Apple plus tard (compte Apple Developer, 99 $/an).
+   Paramètres > Domaines autorisés : ajouter `peche-connect.fr` et l'adresse Cloudflare (`peche-connect.pages.dev`).
+6. **Paramètres du projet > Vos applications > Web (</>)** : nom « Pêche Connect », puis copier la
+   configuration (apiKey, appId…) : elle va à Claude à l'étape 4.
 
-> Plan gratuit : pas de sauvegarde automatique et projet mis en pause après 7 jours sans activité.
-> **Au lancement, passer en Pro (25 $/mois)** : sauvegarde quotidienne gardée 7 jours. Tester une
-> restauration une fois par trimestre (Database > Backups > restaurer dans un projet de test).
+## 2. Stripe (30 min)
 
-## 2. Connexion des utilisateurs (20 min)
+1. Compte Stripe au nom de la société (Kbis, IBAN pro), puis **Connect** → comptes **Express**.
+2. Clé secrète : **Développeurs > Clés API** (`sk_test_…` pour les essais, puis `sk_live_…`).
+3. **Développeurs > Webhooks** → endpoint `https://europe-west9-peche-connect.cloudfunctions.net/stripeWebhook`,
+   événements `checkout.session.completed`, `checkout.session.expired`, `payment_intent.canceled` ;
+   un 2e endpoint identique coché **« Comptes connectés »** avec `account.updated`. Noter les deux `whsec_…`.
 
-**Authentication > URL Configuration** : *Site URL* = `https://peche-connect.github.io` ; *Redirect URLs* :
-`https://peche-connect.github.io/**`, `https://peche-connect.fr/**`, `pecheconnect://**`.
+## 3. Envoyer le serveur sur Firebase
 
-**Google (gratuit, recommandé)** : sur console.cloud.google.com, créer un identifiant OAuth « Application Web »
-avec l'URL de redirection `https://<votre-projet>.supabase.co/auth/v1/callback`, puis coller l'ID et le secret
-dans **Authentication > Providers > Google**.
+Le plus simple : donner à Claude un accès temporaire (il fait tout, puis vous le retirez). Sinon, sur un
+ordinateur avec Node.js, depuis `app/firebase` :
 
-**SMS (facultatif, payant)** : seulement si vous voulez garder la connexion par numéro.
-Créer un compte Twilio, puis **Authentication > Hooks > Send SMS hook** → fonction `envoi-sms`
-(limite : 3 codes/heure et 6/jour par numéro, 2 000/jour au total). Ajouter `EXPO_PUBLIC_CONNEXION_SMS=1` à l'étape 7.
-
-**Administration** : **Authentication > Multi-Factor** : activer TOTP (appli d'authentification).
-Le compte administrateur n'a ses droits qu'une fois la double vérification faite.
-
-## 3. Paiement Stripe Connect (30 min, société nécessaire)
-
-1. Compte Stripe au nom de la société, puis **Connect** → modèle **Express** (Stripe gère l'identité et le RIB
-   des pêcheurs).
-2. **Developers > API keys** : noter la clé secrète `sk_live_…` (d'abord `sk_test_…` pour les essais).
-3. **Developers > Webhooks > Add endpoint** : `https://<votre-projet>.supabase.co/functions/v1/stripe-webhook`
-   - événements du compte : `checkout.session.completed`, `checkout.session.expired`, `payment_intent.canceled`
-   - un 2e endpoint identique coché **« Connected accounts »** avec `account.updated`
-   - noter les deux secrets de signature `whsec_…`
-
-## 4. Secrets des fonctions serveur (5 min)
-
-**Project Settings > Edge Functions > Secrets** (jamais dans le code) :
-
-| Nom | Valeur |
-|---|---|
-| `STRIPE_SECRET_KEY` | `sk_test_…` puis `sk_live_…` |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_…` du 1er endpoint |
-| `STRIPE_WEBHOOK_SECRET_CONNECT` | `whsec_…` du 2e endpoint |
-| `QR_SECRET` | une longue phrase aléatoire (40 caractères ou plus) |
-| `CLE_TACHES` | une autre phrase aléatoire |
-| `SITE_URL` | `https://peche-connect.github.io` (puis `https://peche-connect.fr`) |
-| `ORIGINES_AUTORISEES` | `https://peche-connect.github.io,https://peche-connect.fr,https://www.peche-connect.fr` |
-| `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM`, `SEND_SMS_HOOK_SECRET` | seulement pour le SMS |
-
-## 5. Déployer les fonctions serveur (5 min)
-
-Sur un ordinateur avec Node.js : `cd app && npx supabase login && npx supabase link --project-ref <ref>`
-puis `npx supabase functions deploy`. (Claude peut le faire si vous lui donnez un jeton d'accès Supabase
-temporaire, à révoquer ensuite.)
-
-## 6. Tâche « rappel de retrait » (2 min)
-
-Dans le SQL Editor, en remplaçant `<ref>` et `<CLE_TACHES>` :
-
-```sql
-select cron.schedule('rappels-retrait', '*/15 * * * *', $$
-  select net.http_post(
-    url := 'https://<ref>.supabase.co/functions/v1/notifier',
-    headers := jsonb_build_object('Content-Type', 'application/json', 'x-cle-taches', '<CLE_TACHES>'),
-    body := '{"type":"rappels"}'::jsonb)
-$$);
+```
+npx firebase-tools login
+npx firebase-tools use peche-connect
+npx firebase-tools functions:secrets:set STRIPE_SECRET_KEY              # sk_test_… puis sk_live_…
+npx firebase-tools functions:secrets:set STRIPE_WEBHOOK_SECRET          # whsec_… du 1er endpoint
+npx firebase-tools functions:secrets:set STRIPE_WEBHOOK_SECRET_CONNECT  # whsec_… du 2e
+npx firebase-tools functions:secrets:set QR_SECRET                      # une longue phrase au hasard
+npx firebase-tools deploy
 ```
 
-## 7. Passer le site en mode réel
+`deploy` envoie les règles d'accès (`firestore.rules`, `storage.rules`), les index et les fonctions.
 
-Donner à Claude le *Project URL* et la clé *anon public* (étape 1) : il reconstruit le site avec ces deux
-valeurs (fichier `app/.env`, jamais envoyé sur GitHub ; voir `app/.env.example`) et le publie.
+## 4. Brancher l'appli
 
-## 8. Premiers comptes
+Donner à Claude la configuration Web (étape 1.6). Il la met dans `app/.env` (jamais envoyé sur GitHub),
+reconstruit le site en mode réel et le publie.
 
-- **Vous (admin)** : se connecter une fois dans l'appli, puis SQL Editor :
-  `update profils set role = 'admin' where id = (select id from auth.users where email = 'votre@email');`
-  puis activer la double vérification.
-- **Valider un pêcheur** : **Table Editor > etals** → `statut` = `verifie` (après contrôle de l'immatriculation).
-  Il ouvre ensuite son compte de paiement Stripe depuis l'appli.
-- **Montants** : **Table Editor > reglages** (frais de service, commission, marge, livraison, TVA).
-- **Fermetures** : **Table Editor > fermetures** (lambi et langouste déjà saisis ; ajouter les zones chlordécone
-  port par port).
+## 5. Site sur Cloudflare Pages + nom de domaine (20 min)
 
-## 9. Nom de domaine peche-connect.fr (IONOS → GitHub Pages)
+1. dash.cloudflare.com (compte de la société) → **Workers & Pages > Créer > Pages > Connecter à Git** →
+   dépôt `Peche-connect/peche-connect.github.io`, branche `main`, **commande de build : aucune**,
+   **dossier de sortie : `docs`**. Les fichiers `_headers` (sécurité) et `_redirects` (liens de l'appli) sont prêts.
+2. **Ajouter un domaine personnalisé** `peche-connect.fr` : Cloudflare indique les deux serveurs DNS à
+   mettre chez IONOS (Domaines > peche-connect.fr > Serveurs de noms). La gestion DNS passe chez Cloudflare.
+3. Une fois le site ouvert sur peche-connect.fr : **passer le dépôt GitHub en privé** (GitHub Pages
+   n'autorise pas un site qui sert à vendre ; il ne sert plus que de copie de secours).
 
-1. IONOS > Domaines > `peche-connect.fr` > **DNS** : enregistrements **A** sur `@` vers
-   `185.199.108.153`, `185.199.109.153`, `185.199.110.153`, `185.199.111.153` ; **CNAME** `www` → `peche-connect.github.io`.
-2. Prévenir Claude : il ajoute le fichier `docs/CNAME`. Puis GitHub > Settings > Pages > *Custom domain*
-   `peche-connect.fr` et **Enforce HTTPS** (après la propagation, jusqu'à 24 h).
-3. Adresse mail : IONOS > Email > créer `contact@peche-connect.fr` (adresse citée dans les pages légales).
+## 6. Mails sur le domaine (Zoho, gratuit)
 
-Si vous choisissez finalement Cloudflare pour héberger le site, le dossier `docs/` se publie tel quel sur
-Cloudflare Pages ; les DNS se règlent alors chez Cloudflare au lieu de GitHub.
+zoho.com/mail → offre gratuite → domaine `peche-connect.fr` → ajouter dans Cloudflare (DNS) les
+enregistrements MX, SPF et DKIM que Zoho affiche → créer `contact@peche-connect.fr` (cité dans les pages légales).
 
-## 10. Sécurité du dépôt GitHub (2 min)
+## 7. Premiers pêcheurs
 
-GitHub > Settings > **Code security** : activer *Dependabot alerts*, *Dependabot security updates* et
-*Secret scanning / Push protection*. Le fichier `.github/dependabot.yml` est déjà en place, et les
-vérifications automatiques (`.github/workflows/verifications.yml`) tournent à chaque envoi.
+- Un pêcheur s'inscrit dans l'appli (rôle « Pêcheur ») : son étal apparaît dans **Firestore > etals**
+  avec `statut = en_attente`. Après contrôle de son immatriculation : mettre `statut` à **`verifie`**.
+- Il ouvre ensuite son compte de paiement Stripe depuis l'appli ; Stripe prévient le serveur quand c'est prêt.
+- Montants : **Firestore > reglages > general** (créer le document si besoin : `fraisService`,
+  `commissionPct`, `margeEmpreinte`, `livraisonMinKg`, `fraisLivraison`). Sans document : 0,90 € de frais,
+  0 % de commission, marge de 10 %, livraison 15 € dès 10 kg.
+- Fermetures : lambi et langouste déjà bloqués ; zones chlordécone dans **Firestore > fermetures**
+  (`espece`, `debut` « MM-JJ », `fin`, `motif`, `port`).
 
-## 11. Surveillance
+## 8. Sécurité et sauvegardes
 
-- **Database > Logs** et la table `journal` (webhooks rejetés, QR invalides, plafond de SMS atteint).
-- La vue `activite_anormale` liste les comptes qui créent trop de bons ou de messages en une heure.
-- En cas de fuite de données : prévenir la CNIL sous 72 h (cnil.fr, « Notifier une violation »).
+- Validation en deux étapes sur **tous** les comptes (Gmail, Firebase, Stripe, Cloudflare, GitHub, Zoho, IONOS).
+- Firestore > **Sauvegardes** : activer une sauvegarde quotidienne (quelques centimes par mois) et tester
+  une restauration une fois par trimestre.
+- **Journal** des événements de sécurité : collection `journal` (webhooks rejetés, faux QR, inscriptions à vérifier).
+- GitHub > Settings > Code security : *Dependabot alerts* et *Secret scanning* activés.
+- En cas de fuite de données : prévenir la CNIL sous 72 h.
 
 ## Avant d'ouvrir au public
 
-Compléter les crochets […] des pages légales (`app/src/legal.ts`) une fois la société créée, désigner un
-médiateur de la consommation, fixer les montants et les règles d'annulation, faire relire les textes.
+Compléter les crochets […] des pages légales (`app/src/legal.ts`), désigner un médiateur de la
+consommation, fixer montants et règles d'annulation, faire relire les textes.

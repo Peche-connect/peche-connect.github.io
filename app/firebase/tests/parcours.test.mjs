@@ -28,7 +28,11 @@ async function page(nom) {
   return p;
 }
 const texte = (p) => p.evaluate(() => document.body.innerText);
-async function voir(p, t, ms = 15000) { await p.getByText(t, { exact: false }).first().waitFor({ timeout: ms }); }
+// attend un texte VISIBLE (les écrans précédents restent en mémoire, cachés) ; en cas d'échec, montre l'écran
+async function voir(p, t, ms = 15000) {
+  try { await p.getByText(t, { exact: false }).filter({ visible: true }).first().waitFor({ timeout: ms }); }
+  catch (e) { console.log('ÉCRAN AU MOMENT DE L’ÉCHEC (' + t + ') :\n' + (await texte(p).catch(() => '')).slice(-1500)); throw e; }
+}
 async function lienEmail(email) { // lien de connexion « envoyé » par l'émulateur
   for (let i = 0; i < 40; i++) {
     const r = await (await fetch(`http://127.0.0.1:9099/emulator/v1/projects/${PROJET}/oobCodes`)).json();
@@ -115,7 +119,7 @@ describe('Parcours complet en mode réel', () => {
 
   test('messages écrits et vocaux dans les deux sens', async () => {
     await client.getByText('Message', { exact: true }).click();
-    await voir(client, 'payée');
+    await voir(client, 'La messagerie est ouverte');
     await client.getByPlaceholder('Écrire à', { exact: false }).fill('Bonjour, j’arrive vers 9 h');
     await client.getByLabel('Envoyer', { exact: true }).click();
     await voir(client, 'j’arrive vers 9 h');
