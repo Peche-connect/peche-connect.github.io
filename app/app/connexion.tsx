@@ -39,7 +39,7 @@ export default function Connexion() {
 
         {etape === 'numero' ? (
           <>
-            <Image source={require('../assets/personnage/poisson-grand.png')} style={{ width: 196, height: 220, alignSelf: 'center' }} resizeMode="contain" accessibilityLabel="Le pêcheur Pêche Connect présente un vivaneau" />
+            <Image source={require('../assets/ambiance/yoles.jpg')} style={{ width: '100%', height: 170, borderRadius: 16 }} resizeMode="cover" accessibilityLabel="Yoles de pêcheurs sur la plage" />
                         <View style={{ gap: 6 }}>
               <T tresGras style={{ fontSize: 24 }}>Bienvenue</T>
               <T gris>Le poisson du jour des pêcheurs de Martinique, réservé en quelques secondes.</T>

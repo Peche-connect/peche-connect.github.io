@@ -37,7 +37,7 @@ Le porteur du projet n'est pas développeur : explique les choix simplement, en 
 - **Typo** : Figtree pour toute l'interface ; Bebas Neue seulement pour le logo.
 - **Personnage « le pêcheur Pêche Connect » (planche validée par le porteur le 17/11/2026)** : casquette marine, barbe grise, t-shirt blanc, tablier marine marqué « PÊCHE CONNECT ». Poses détourées (fond transparent) dans `app/assets/personnage/`, chacune là où sa posture convient :
   - **logo** (`Logo`, tous les en-têtes) : **retour le 17/11/2026, à la demande du porteur, au premier pêcheur (casquette bleue) qui tend son poisson**, `app/assets/embleme/personnage.png`, juste après « PÊCHE », sur fond blanc (même composition que la photo de profil `design/logos/photo-profil-beige-pecheur.png`, que le porteur utilise sur WhatsApp). `tete-face.png` n'est plus utilisé ;
-  - `poisson-grand.png` : **connexion / bienvenue** ;
+  - **connexion / bienvenue** : **photo des yoles `app/assets/ambiance/yoles.jpg` remise le 17/11/2026 à la demande du porteur** (`poisson-grand.png` n'y est plus) ;
   - `poisson-fier.png` : **bandeau de l'accueil** (« Le poisson du jour… ») ;
   - `decoupe.png` : **panier**, encart « Entier, en tranches ou en filets » ;
   - `pouce.png` : **bon de retrait**, « C'est réservé ! » (masqué une fois retiré) ;
