@@ -18,7 +18,7 @@ export default function Messages() {
           return (
             <Pressable key={cv.id} onPress={() => router.push({ pathname: '/chat/[id]', params: { id: cv.id } })} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
               <View style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center' }}><T tresGras style={{ color: '#fff' }}>{e?.pecheur.slice(0, 2).toUpperCase()}</T></View>
-              <View style={{ flex: 1 }}><T tresGras>{e?.pecheur}</T><T gris petit numberOfLines={1}>{der ? (der.position ? 'Position partagée' : der.texte) : 'Bon ' + cv.bon}</T></View>
+              <View style={{ flex: 1 }}><T tresGras>{e?.pecheur}</T><T gris petit numberOfLines={1}>{der ? (der.position ? 'Position partagée' : der.audio ? 'Message vocal' : der.texte) : 'Bon ' + cv.bon}</T></View>
               {!cv.luClient ? <View style={{ minWidth: 20, height: 20, borderRadius: 10, backgroundColor: c.accent, alignItems: 'center', justifyContent: 'center' }}><T tresGras petit>1</T></View> : null}
             </Pressable>
           );

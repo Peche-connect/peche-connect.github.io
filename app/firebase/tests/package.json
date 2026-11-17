@@ -4,12 +4,14 @@
   "type": "module",
   "scripts": {
     "regles": "node --test --test-concurrency=1 regles.test.mjs",
-    "fonctions": "node --test --test-concurrency=1 fonctions.test.mjs"
+    "fonctions": "node --test --test-concurrency=1 fonctions.test.mjs",
+    "parcours": "node --test --test-concurrency=1 --test-timeout=600000 parcours.test.mjs"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "4.0.1",
     "firebase": "11.10.0",
     "firebase-admin": "13.10.0",
-    "stripe": "17.7.0"
+    "stripe": "17.7.0",
+    "playwright": "1.65.1"
   }
 }
