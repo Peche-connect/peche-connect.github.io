@@ -132,7 +132,7 @@ describe('Parcours complet en mode réel', () => {
     await pecheur.getByText('Réservations', { exact: true }).last().click();
     await voir(pecheur, code, 20000);
     await pecheur.getByText('Messages', { exact: true }).last().click();
-    await pecheur.getByText('Sophie').first().click({ timeout: 20000 });
+    await pecheur.getByText('Sophie', { exact: true }).filter({ visible: true }).first().click({ timeout: 20000 });
     await voir(pecheur, 'j’arrive vers 9 h');
     await pecheur.getByLabel('Écouter le message vocal').first().click();
     await pecheur.getByLabel('Arrêter le message vocal').first().waitFor({ timeout: 10000 }); // le fichier privé se télécharge et se lit
