@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, Chip, EnTete, Feuille, Ligne, T, Vide } from '../src/components/ui';
 import { euro, FRAIS_LIVRAISON, FRAIS_SERVICE, kg, LIVRAISON_MIN_KG, montantBloque, sousTotal } from '../src/format';
@@ -41,6 +41,10 @@ export default function PanierEcran() {
     <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
       <EnTete titre="Mon panier" sousTitre={'Étal de ' + e.pecheur + ' · ' + e.port} fermer />
       <ScrollView>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, margin: 16, marginBottom: 4, padding: 12, borderRadius: 14, backgroundColor: c.doux }}>
+          <Image source={require('../assets/personnage/decoupe.png')} style={{ width: 70, height: 78 }} resizeMode="contain" accessibilityIgnoresInvertColors />
+          <T gris style={{ flex: 1 }}>Entier, en tranches ou en filets : le pêcheur prépare votre poisson à la demande.</T>
+        </View>
         {p.lignes.map((l) => {
           const pr = e.produits.find((x) => x.id === l.produitId)!;
           return (

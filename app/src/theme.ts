@@ -5,7 +5,6 @@ export const couleurs = {
   gris: '#62625d',
   grisClair: '#85857f',
   doux: '#f3f3f1',
-  beige: '#f1e9dc', // fond de l'emblème (bandeau d'accueil, connexion)
   ligne: '#e5e5e2',
   marine: '#12355b', // logo, boutons d'action, sélections
   surMarine: '#ffffff',

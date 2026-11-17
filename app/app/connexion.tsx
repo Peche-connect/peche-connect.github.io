@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, Logo, T } from '../src/components/ui';
 import { CODE_SMS_DEMO, MODE_DEMO, useApp } from '../src/store';
@@ -39,6 +39,7 @@ export default function Connexion() {
 
         {etape === 'numero' ? (
           <>
+            <Image source={require('../assets/personnage/poisson-grand.png')} style={{ width: 196, height: 220, alignSelf: 'center' }} resizeMode="contain" accessibilityLabel="Le pêcheur Pêche Connect présente un vivaneau" />
                         <View style={{ gap: 6 }}>
               <T tresGras style={{ fontSize: 24 }}>Bienvenue</T>
               <T gris>Le poisson du jour des pêcheurs de Martinique, réservé en quelques secondes.</T>

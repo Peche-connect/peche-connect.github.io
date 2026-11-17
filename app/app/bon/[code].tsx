@@ -1,6 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { Image, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcCarte } from '../../src/components/icones';
 import { Itineraire } from '../../src/components/Itineraire';
@@ -25,6 +25,12 @@ export default function BonEcran() {
     <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
       <EnTete titre="Votre bon de retrait" sousTitre="Réservation confirmée · payée" fermer />
       <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+        {retire ? null : (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginTop: 12 }}>
+            <Image source={require('../../assets/personnage/pouce.png')} style={{ width: 70, height: 90 }} resizeMode="contain" accessibilityIgnoresInvertColors />
+            <View style={{ flex: 1, gap: 2 }}><T tresGras style={{ fontSize: 18 }}>C’est réservé !</T><T gris>Montrez ce code au pêcheur au moment du retrait.</T></View>
+          </View>
+        )}
         <View style={{ margin: 16, marginBottom: 0, borderWidth: 1, borderColor: c.ligne, borderRadius: 16, padding: 18, gap: 14 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ gap: 6 }}>

@@ -13,18 +13,16 @@ export function T({ style, gras, tresGras, gris, petit, children, ...p }: React.
 }
 
 // En-tête de l'appli : « PÊCHE / CONNECT » en entier, trait vertical à droite (choix du porteur)
-// Logo validé : « PÊCHE / CONNECT », le pêcheur de l'emblème juste après « PÊCHE », trait vertical à droite, sur un cartouche beige (essai).
+// Logo validé : « PÊCHE / CONNECT », la tête souriante du pêcheur juste après « PÊCHE », trait vertical à droite.
 export function Logo({ taille = 22 }: { taille?: number }) {
   const lettres = { fontFamily: f.logo, fontSize: taille, lineHeight: taille * 0.9, color: c.marine, letterSpacing: 1 };
   return (
-    <View style={{ backgroundColor: c.beige, borderRadius: taille * 0.3, paddingVertical: taille * 0.22, paddingHorizontal: taille * 0.3, alignSelf: 'flex-start' }} accessibilityLabel="Pêche Connect">
-    <View style={{ borderRightWidth: Math.max(3, taille / 14), borderRightColor: c.marine, paddingRight: taille * 0.3, paddingTop: 3 }}>
+    <View style={{ borderRightWidth: Math.max(3, taille / 14), borderRightColor: c.marine, paddingRight: taille * 0.3, paddingTop: 3, alignSelf: 'flex-start' }} accessibilityLabel="Pêche Connect">
       <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
         <Text style={lettres}>PÊCHE</Text>
-        <Image source={require('../../assets/embleme/pecheur.png')} style={{ width: taille * 1.05, height: taille * 0.85, marginLeft: taille * 0.06, marginBottom: taille * 0.1, marginRight: -taille * 0.2 }} resizeMode="contain" accessibilityIgnoresInvertColors />
+        <Image source={require('../../assets/personnage/tete-face.png')} style={{ width: taille * 0.84, height: taille * 0.9, marginLeft: taille * 0.12, marginBottom: taille * 0.06 }} resizeMode="contain" accessibilityIgnoresInvertColors />
       </View>
       <Text style={lettres}>CONNECT</Text>
-    </View>
     </View>
   );
 }
@@ -83,10 +81,10 @@ export function EnTete({ titre, sousTitre, fermer, droite }: { titre: string; so
   );
 }
 
-export function Vide({ titre, texte, action, onAction, perso = false }: { titre: string; texte: string; action?: string; onAction?: () => void; perso?: boolean }) {
+export function Vide({ titre, texte, action, onAction, perso = true }: { titre: string; texte: string; action?: string; onAction?: () => void; perso?: boolean }) {
   return (
     <View style={{ padding: 32, alignItems: 'center', gap: 10 }}>
-      {perso ? <Image source={require('../../assets/embleme/personnage.png')} style={{ width: 150, height: 100, marginBottom: 4 }} resizeMode="contain" accessibilityIgnoresInvertColors /> : null}
+      {perso ? <Image source={require('../../assets/personnage/tete-rire.png')} style={{ width: 120, height: 106, marginBottom: 4 }} resizeMode="contain" accessibilityIgnoresInvertColors /> : null}
       <T tresGras style={{ fontSize: 17, textAlign: 'center' }}>{titre}</T>
       <T gris style={{ textAlign: 'center' }}>{texte}</T>
       {action ? <Chip titre={action} actif onPress={onAction} /> : null}
