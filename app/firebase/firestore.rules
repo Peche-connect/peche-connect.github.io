@@ -1,0 +1,123 @@
+rules_version = '2';
+// Pêche Connect · règles d'accès de la base Firestore
+// Principe : personne ne lit ni n'écrit sans règle explicite. Les bons, les paiements, les stocks,
+// les rôles et la vérification des pêcheurs ne sont modifiés QUE par les fonctions serveur
+// (qui ne passent pas par ces règles). L'administration se fait dans la console Firebase,
+// protégée par la validation en deux étapes du compte Google.
+service cloud.firestore {
+  match /databases/{base}/documents {
+
+    function connecte() { return request.auth != null; }
+    function moi() { return request.auth.uid; }
+    function role() { return request.auth.token.role; }
+    function pecheurVerifie() { return connecte() && role() == 'pecheur' && request.auth.token.verifie == true; }
+    function seulement(champs) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(champs); }
+
+    // Réglages (frais, commission…) et périodes de fermeture : lisibles par tous
+    match /reglages/{doc} { allow read: if true; }
+    match /fermetures/{doc} { allow read: if true; }
+
+    // Profil : chacun lit le sien ; il peut changer son prénom, sa commune, ses alertes et ses
+    // jetons de notification, jamais son rôle (choisi via la fonction « choisirRole »)
+    match /profils/{uid} {
+      allow read: if connecte() && moi() == uid;
+      allow update: if connecte() && moi() == uid
+        && seulement(['prenom', 'commune', 'suivis', 'jetons'])
+        && request.resource.data.prenom is string && request.resource.data.prenom.size() <= 40
+        && request.resource.data.suivis is list && request.resource.data.suivis.size() <= 20
+        && request.resource.data.jetons is list && request.resource.data.jetons.size() <= 10;
+    }
+
+    // Professionnels : SIRET et adresse visibles seulement par le pro lui-même
+    match /pros/{uid} {
+      allow read: if connecte() && moi() == uid;
+    }
+
+    // Étals : vitrine publique (pêcheurs vérifiés) ; le pêcheur voit toujours le sien
+    match /etals/{etal} {
+      allow read: if (resource.data.statut == 'verifie' && resource.data.stripePret == true)
+        || (connecte() && resource.data.pecheurId == moi());
+
+      // Adresse exacte et immatriculation : le pêcheur, ou un client qui a payé chez lui
+      // (document « acces » posé par le serveur au paiement, valable jusqu'au lendemain)
+      match /prive/{doc} {
+        function aPaye() {
+          return exists(/databases/$(base)/documents/acces/$(etal + '_' + moi()))
+            && get(/databases/$(base)/documents/acces/$(etal + '_' + moi())).data.jusqua > request.time;
+        }
+        allow read: if connecte() && (get(/databases/$(base)/documents/etals/$(etal)).data.pecheurId == moi() || aPaye());
+        allow update: if connecte() && get(/databases/$(base)/documents/etals/$(etal)).data.pecheurId == moi()
+          && seulement(['lieu', 'precision'])
+          && request.resource.data.lieu is string && request.resource.data.lieu.size() <= 120
+          && request.resource.data.precision is string && request.resource.data.precision.size() <= 120;
+      }
+    }
+
+    // Bons : le client voit les siens, le pêcheur ceux de son étal, le chauffeur ceux qu'il livre.
+    // Aucune écriture depuis l'appli. Les secrets (signature du QR, références Stripe) sont dans
+    // « bonsSecrets », jamais lisibles.
+    match /bons/{code} {
+      allow read: if connecte() && (resource.data.clientId == moi() || resource.data.pecheurId == moi()
+        || resource.data.get('chauffeurId', '') == moi());
+    }
+
+    // Messagerie : seulement les deux participants
+    match /conversations/{conv} {
+      allow read: if connecte() && moi() in resource.data.participants;
+      // chacun ne peut que marquer « lu » de son côté
+      allow update: if connecte() && (
+        (moi() == resource.data.clientId && seulement(['luClient']) && request.resource.data.luClient == true)
+        || (moi() == resource.data.pecheurId && seulement(['luPecheur']) && request.resource.data.luPecheur == true));
+
+      match /messages/{msg} {
+        function conversation() { return get(/databases/$(base)/documents/conversations/$(conv)).data; }
+        function texteOk(m) { return !('texte' in m) || (m.texte is string && m.texte.size() > 0 && m.texte.size() <= 1000); }
+        function audioOk(m) {
+          return !('audio' in m) || (m.audio.keys().hasOnly(['chemin', 'duree'])
+            && m.audio.chemin is string && m.audio.chemin.matches('^' + conv + '/[A-Za-z0-9_.-]+$')
+            && m.audio.duree is int && m.audio.duree >= 1 && m.audio.duree <= 120);
+        }
+        function positionOk(m) {
+          return !('position' in m) || (m.position.keys().hasOnly(['libelle', 'lat', 'lon'])
+            && m.position.lat is number && m.position.lon is number
+            && m.positionExpireLe is timestamp && m.positionExpireLe <= request.time + duration.value(12, 'h'));
+        }
+        allow read: if connecte() && moi() in conversation().participants;
+        allow create: if connecte()
+          && request.resource.data.keys().hasOnly(['auteurId', 'auteur', 'texte', 'audio', 'position', 'positionExpireLe', 'creeLe'])
+          && request.resource.data.auteurId == moi()
+          && request.resource.data.creeLe == request.time
+          && (('texte' in request.resource.data) || ('audio' in request.resource.data) || ('position' in request.resource.data))
+          && texteOk(request.resource.data) && audioOk(request.resource.data) && positionOk(request.resource.data)
+          && (
+            (request.resource.data.auteur == 'client' && moi() == conversation().clientId && !('position' in request.resource.data))
+            || (request.resource.data.auteur == 'pecheur' && moi() == conversation().pecheurId)
+          );
+      }
+    }
+
+    // Besoins des pros : le pro gère les siens ; les pêcheurs vérifiés voient ceux qui sont ouverts
+    match /demandes/{id} {
+      allow read: if connecte() && (resource.data.proId == moi()
+        || (pecheurVerifie() && resource.data.statut == 'ouverte')
+        || (role() == 'pecheur' && resource.data.get('etalId', '') == request.auth.token.etalId));
+      allow create: if connecte() && role() == 'pro'
+        && request.resource.data.keys().hasOnly(['proId', 'proRaison', 'proType', 'proCommune', 'espece', 'kg', 'prixMaxKg', 'pour', 'note', 'livraison', 'statut', 'creeLe'])
+        && request.resource.data.proId == moi() && request.resource.data.statut == 'ouverte'
+        && request.resource.data.creeLe == request.time
+        && request.resource.data.espece is string && request.resource.data.espece.size() <= 40
+        && request.resource.data.kg is number && request.resource.data.kg > 0 && request.resource.data.kg <= 1000
+        && request.resource.data.prixMaxKg is number && request.resource.data.prixMaxKg > 0 && request.resource.data.prixMaxKg < 500
+        && request.resource.data.pour in ['Aujourd’hui', 'Demain']
+        && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 300));
+      // le pro peut seulement annuler un besoin encore ouvert
+      allow update: if connecte() && resource.data.proId == moi() && resource.data.statut == 'ouverte'
+        && seulement(['statut']) && request.resource.data.statut == 'annulee';
+    }
+
+    // Tout le reste (acces, bonsSecrets, comptesStripe, compteurs, journal…) : serveur uniquement
+    match /{autre=**} {
+      allow read, write: if false;
+    }
+  }
+}

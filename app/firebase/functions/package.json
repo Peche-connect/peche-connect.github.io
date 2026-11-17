@@ -1,0 +1,19 @@
+{
+  "name": "peche-connect-fonctions",
+  "private": true,
+  "main": "lib/index.js",
+  "engines": { "node": "20" },
+  "scripts": {
+    "build": "tsc",
+    "test:unitaires": "tsc && node --test lib/_tests/*.test.js"
+  },
+  "dependencies": {
+    "firebase-admin": "13.10.0",
+    "firebase-functions": "6.6.0",
+    "stripe": "17.7.0"
+  },
+  "devDependencies": {
+    "typescript": "5.6.3",
+    "@types/node": "20.17.6"
+  }
+}

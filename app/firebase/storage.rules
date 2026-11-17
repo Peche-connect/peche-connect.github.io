@@ -1,0 +1,30 @@
+rules_version = '2';
+// Pêche Connect · règles d'accès des fichiers (Cloud Storage)
+service firebase.storage {
+  match /b/{seau}/o {
+
+    // Photos des arrivages : publiques ; seul le pêcheur de l'étal dépose (image, 5 Mo max)
+    match /arrivages/{etal}/{fichier} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.token.etalId == etal
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    // Messages vocaux : privés, seulement les deux participants de la conversation (2 Mo max)
+    match /messages-audio/{conv}/{fichier} {
+      function participant() {
+        return request.auth != null
+          && request.auth.uid in firestore.get(/databases/(default)/documents/conversations/$(conv)).data.participants;
+      }
+      allow read: if participant();
+      allow create: if participant()
+        && request.resource.size < 2 * 1024 * 1024
+        && request.resource.contentType.matches('audio/.*');
+    }
+
+    match /{autre=**} {
+      allow read, write: if false;
+    }
+  }
+}

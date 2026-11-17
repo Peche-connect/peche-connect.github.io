@@ -1,5 +1,8 @@
-# Vérifications automatiques à chaque envoi sur GitHub : l'appli compile, les règles d'accès de la base
-# tiennent (55 tests), les calculs et la sécurité côté serveur (QR signé, webhook Stripe) sont corrects.
+# Vérifications automatiques à chaque envoi sur GitHub :
+#  1. l'appli compile ;
+#  2. le serveur Firebase : calculs, règles d'accès (base + fichiers) et fonctions de bout en bout,
+#     sur les émulateurs Firebase avec une copie locale de Stripe (stripe-mock) ;
+#  3. le parcours complet dans un vrai navigateur (client, pêcheur, paiement, messages, vocal).
 name: Vérifications
 on:
   push:
@@ -16,27 +19,30 @@ jobs:
         with: { node-version: 20, cache: npm, cache-dependency-path: app/package-lock.json }
       - run: npm ci
       - run: npx tsc --noEmit
-  base-de-donnees:
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16
-        env: { POSTGRES_PASSWORD: test }
-        ports: ['5432:5432']
-        options: --health-cmd pg_isready --health-interval 5s --health-retries 10
-    env: { PGHOST: localhost, PGUSER: postgres, PGPASSWORD: test }
-    steps:
-      - uses: actions/checkout@v4
-      - name: Schéma et règles d'accès
-        run: |
-          psql -v ON_ERROR_STOP=1 -q -f app/supabase/tests/imitation_supabase.sql
-          for f in app/supabase/migrations/*.sql; do psql -v ON_ERROR_STOP=1 -q -f "$f"; done
-          psql -v ON_ERROR_STOP=1 -q -f app/supabase/tests/regles_acces.sql > /dev/null
+
   serveur:
     runs-on: ubuntu-latest
+    services:
+      stripe:
+        image: stripe/stripe-mock:latest
+        ports: ['12111:12111']
+    defaults: { run: { working-directory: app/firebase } }
     steps:
       - uses: actions/checkout@v4
-      - uses: denoland/setup-deno@v2
-        with: { deno-version: v2.x }
-      - working-directory: app/supabase/functions
-        run: deno check */index.ts && deno test --allow-env _tests/
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - name: Fonctions (compilation + calculs)
+        working-directory: app/firebase/functions
+        run: npm ci && npm run test:unitaires
+      - name: Réglages de test des émulateurs (fausses clés)
+        run: |
+          printf 'STRIPE_SECRET_KEY=sk_test_123\nSTRIPE_WEBHOOK_SECRET=whsec_test_peche_connect\nSTRIPE_WEBHOOK_SECRET_CONNECT=-\nQR_SECRET=cle-qr-de-test-longue-0123456789\n' > functions/.secret.local
+          printf 'STRIPE_API_HOTE=127.0.0.1:12111\nSITE_URL=http://localhost:8091\n' > functions/.env.local
+      - run: npm ci
+        working-directory: app/firebase/tests
+      - name: Règles d'accès (base + fichiers)
+        run: npx -y firebase-tools@14 emulators:exec --project demo-peche-connect --only firestore,storage "npm --prefix tests run regles"
+      - name: Fonctions serveur de bout en bout
+        run: npx -y firebase-tools@14 emulators:exec --project demo-peche-connect --only auth,firestore,storage,functions "npm --prefix tests run fonctions"

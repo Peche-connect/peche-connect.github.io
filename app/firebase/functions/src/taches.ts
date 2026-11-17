@@ -1,0 +1,39 @@
+// Tâches automatiques (toutes les 5 minutes, une seule tâche planifiée pour rester dans la gratuité) :
+// positions de pêcheur expirées effacées, paiements abandonnés remis en vente, rappels de retrait.
+import { onSchedule } from 'firebase-functions/v2/scheduler';
+import { db, FieldValue, REGION, Timestamp } from './commun';
+import { notifier } from './notifier';
+import { annulerBon } from './reservations';
+
+export async function lancerTaches(maintenant = Date.now()) {
+  const bilan = { positions: 0, abandons: 0, rappels: 0 };
+  // 1. positions expirées
+  const pos = await db.collectionGroup('messages').where('positionExpireLe', '<', Timestamp.fromMillis(maintenant)).limit(300).get();
+  for (const m of pos.docs) {
+    await m.ref.update({ position: FieldValue.delete(), positionExpireLe: FieldValue.delete(), texte: 'Position partagée (expirée)' });
+    bilan.positions++;
+  }
+  // 2. paiements abandonnés : 1 h pour une réservation, 24 h pour une commande de pro
+  const attente = await db.collection('bons').where('statut', '==', 'en_attente_paiement').where('creeLe', '<', Timestamp.fromMillis(maintenant - 3600_000)).limit(200).get();
+  for (const b of attente.docs) {
+    const x = b.data();
+    if (x.origine === 'demande' && x.creeLe.toMillis() > maintenant - 24 * 3600_000) continue;
+    await annulerBon(b.id);
+    bilan.abandons++;
+  }
+  // 3. rappel de retrait, une seule fois, 1 h après le paiement
+  const rappels = await db.collection('bons').where('statut', '==', 'reserve').where('rappelEnvoye', '==', false).where('payeLe', '<', Timestamp.fromMillis(maintenant - 3600_000)).limit(200).get();
+  for (const b of rappels.docs) {
+    const x = b.data();
+    const etal = (await db.doc('etals/' + x.etalId).get()).data();
+    await notifier([x.clientId], 'Votre poisson vous attend', 'Bon ' + x.code + ' chez ' + (etal?.prenom ?? 'votre pêcheur') + ' (' + (etal?.port ?? '') + ') · ' + x.creneau, { lien: '/bon/' + x.code });
+    await b.ref.update({ rappelEnvoye: true });
+    bilan.rappels++;
+  }
+  return bilan;
+}
+
+export const taches = onSchedule({ region: REGION, schedule: 'every 5 minutes', timeZone: 'America/Martinique' }, async () => {
+  const b = await lancerTaches();
+  if (b.positions || b.abandons || b.rappels) console.log('tâches', b);
+});
