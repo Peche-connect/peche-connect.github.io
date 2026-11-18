@@ -346,7 +346,7 @@ describe('Formats de vente (kilo, pièce, barquettes, lot)', () => {
 describe('Réservations avant la sortie', () => {
   const dans = (h) => new Date(Date.now() + h * 3600_000).toISOString();
   const annonce = (thonMax = 5) => appeler('pecheur', 'annoncerSortie', { retour: dans(3), especes: [
-    { espece: 'Thon jaune', prixKg: 14, kgMax: thonMax }, { espece: 'Dorade coryphène', prixKg: 13, kgMax: 4 }, { espece: 'Colas', prixKg: 15, kgMax: 3 }] });
+    { espece: 'Thon jaune', prixKg: 14, kgMax: thonMax }, { espece: 'Dorade coryphène', prixKg: 13, kgMax: 4 }, { espece: 'Vivaneau', prixKg: 15, kgMax: 3 }] });
   let pThon;
   test('le pêcheur annonce sa sortie ; les clients réservent sans payer', async () => {
     await assert.rejects(appeler('pecheur', 'annoncerSortie', { retour: dans(100), especes: [{ espece: 'Thon jaune', prixKg: 14, kgMax: 5 }] }), /48 heures/);
@@ -357,7 +357,7 @@ describe('Réservations avant la sortie', () => {
     await appeler('client', 'precommander', { etalId, espece: 'Dorade coryphène', kg: 2 });
     await assert.rejects(appeler('autre', 'precommander', { etalId, espece: 'Thon jaune', kg: 3 }), /Plus que 2 kg/);
     await appeler('autre', 'precommander', { etalId, espece: 'Thon jaune', kg: 2 });
-    await appeler('autre', 'precommander', { etalId, espece: 'Colas', kg: 2 });
+    await appeler('autre', 'precommander', { etalId, espece: 'Vivaneau', kg: 2 });
     await assert.rejects(appeler('client', 'precommander', { etalId, espece: 'Thon jaune', kg: 1 }), /déjà réservé/);
     await assert.rejects(appeler('client', 'precommander', { etalId, espece: 'Langouste', kg: 1 }), /non annoncée/);
     await assert.rejects(annonce(4), /déjà réservés/);
@@ -367,7 +367,7 @@ describe('Réservations avant la sortie', () => {
     const r = await appeler('pecheur', 'publierArrivage', { lignes: [
       { espece: 'Thon jaune', prixKg: 14, dispoKg: 10, preparations: [{ nom: 'Entier', supplementKg: 0 }, { nom: 'En tranches', supplementKg: 2 }] },
       { espece: 'Dorade coryphène', format: 'piece', prixKg: 13, pieces: [{ poidsKg: 4 }] },
-      { espece: 'Colas', prixKg: 15, dispoKg: 1, preparations: [{ nom: 'Entier', supplementKg: 0 }] }] });
+      { espece: 'Vivaneau', prixKg: 15, dispoKg: 1, preparations: [{ nom: 'Entier', supplementKg: 0 }] }] });
     assert.equal(r.converties, 3); assert.equal(r.nonServies, 1);
     const p = await lire('precommandes/' + pThon);
     assert.equal(p.statut, 'convertie');
@@ -375,7 +375,7 @@ describe('Réservations avant la sortie', () => {
     assert.equal(b.origine, 'sortie'); assert.equal(b.statut, 'en_attente_paiement'); assert.equal(b.clientId, comptes.client.uid); assert.equal(b.lignes[0].kg, 3);
     assert.equal(b.montantBloque, 47.1, '3 × 14 × 1,1 + 0,90');
     const autres = (await db.collection('precommandes').where('etalId', '==', etalId).get()).docs.map((d) => d.data());
-    assert.equal(autres.find((x) => x.espece === 'Colas').kgServi, 1, 'servi en partie : 1 kg sur 2');
+    assert.equal(autres.find((x) => x.espece === 'Vivaneau').kgServi, 1, 'servi en partie : 1 kg sur 2');
     assert.match(autres.find((x) => x.espece === 'Dorade coryphène').raison, /vendu autrement/);
     const etal = await lire('etals/' + etalId);
     assert.equal(etal.produits[0].dispoKg, 5); assert.equal(etal.produits[2].dispoKg, 0);

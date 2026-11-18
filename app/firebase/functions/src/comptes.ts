@@ -204,7 +204,11 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
   const mesBons = (await db.collection('bons').where('clientId', '==', uid).get()).docs;
   mesBons.forEach((b) => lot.update(b.ref, { clientId: null, clientPrenom: 'Compte supprimé' }));
   // avis gardés (la note de l'étal reste juste) mais sans prénom
-  for (const b of mesBons) if (b.data().avis) lot.update(db.doc('avis/' + b.id), { prenom: 'Ancien client' });
+  for (const b of mesBons) {
+    if (!b.data().avis) continue;
+    const a = db.doc('avis/' + b.id); // l'avis a pu être retiré par l'équipe
+    if ((await a.get()).exists) lot.update(a, { prenom: 'Ancien client' });
+  }
   if (etal) (await db.collection('bons').where('pecheurId', '==', uid).get()).docs.forEach((b) => lot.update(b.ref, { pecheurId: null }));
   await lot.commit();
   // conversations (côté client et côté pêcheur) : messages et fichiers vocaux effacés
