@@ -130,8 +130,6 @@ les fonctions serveur refusent les appels de l'appli installée : c'est voulu.
 - Signer les contrats de traitement des données (Google Cloud / Firebase, Stripe, Cloudflare : à accepter
   dans leurs consoles) et tenir le registre des traitements (modèle CNIL).
 - Faire faire un **audit de sécurité par un professionnel** (test d'intrusion) : c'est la seule garantie extérieure.
-- Vérifier le SIRET des professionnels (aujourd'hui seulement contrôlé sur 14 chiffres, `siretVerifie: false`) :
-  à brancher sur l'API Sirene de l'INSEE (gratuite) avant d'ouvrir l'espace pro.
 - Le site doit tourner sur **Cloudflare Pages** (étape 5) et non GitHub Pages : GitHub ignore le fichier
   `_headers`, donc les protections du navigateur (CSP, anti-iframe…) ne s'appliquent qu'une fois sur Cloudflare.
 
@@ -142,3 +140,4 @@ les fonctions serveur refusent les appels de l'appli installée : c'est voulu.
   sont masqués **avant** d'être enregistrés ; espèces, préparations et créneaux pris dans des listes fermées.
 - Messagerie ouverte après le paiement, fermée 24 h après le retrait ; e-mail confirmé pour réserver ;
   plafonds de kilos et de réservations non payées ; cadence limitée sur chaque action.
+- SIRET des pros contrôlé (clé + répertoire public des entreprises de l'État) : rien à configurer.
