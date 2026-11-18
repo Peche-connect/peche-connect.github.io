@@ -4,9 +4,10 @@ import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { db, FieldValue, REGION, Timestamp } from './commun';
 import { notifier } from './notifier';
 import { annulerBon } from './reservations';
+import { champsSiret, verifierSiret } from './sirene';
 
 export async function lancerTaches(maintenant = Date.now()) {
-  const bilan = { positions: 0, abandons: 0, rappels: 0 };
+  const bilan = { positions: 0, abandons: 0, rappels: 0, sirets: 0 };
   // 1. positions expirées
   const pos = await db.collectionGroup('messages').where('positionExpireLe', '<', Timestamp.fromMillis(maintenant)).limit(300).get();
   for (const m of pos.docs) {
@@ -32,6 +33,14 @@ export async function lancerTaches(maintenant = Date.now()) {
     await notifier([x.clientId], 'Votre poisson vous attend', 'Bon ' + x.code + ' chez ' + (etal?.prenom ?? 'votre pêcheur') + ' (' + (etal?.port ?? '') + ') · ' + x.creneau, { lien: '/bon/' + x.code });
     await b.ref.update({ rappelEnvoye: true });
     bilan.rappels++;
+  }
+  // 4. SIRET pas encore confirmés (répertoire injoignable ou établissement tout juste créé) : nouvel essai toutes les 6 h
+  const pros = await db.collection('pros').where('siretVerifie', '==', false).limit(50).get();
+  for (const p of pros.docs) {
+    const x = p.data();
+    if (x.siretStatut === 'ferme' || (x.siretControleLe?.toMillis?.() ?? 0) > maintenant - 6 * 3600_000 || bilan.sirets >= 10) continue;
+    const v = await verifierSiret(String(x.siret));
+    if (v.statut !== 'indisponible') { await p.ref.update(champsSiret(v)); bilan.sirets++; }
   }
   return bilan;
 }

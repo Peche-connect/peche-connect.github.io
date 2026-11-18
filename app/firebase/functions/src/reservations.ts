@@ -244,6 +244,7 @@ export const posterDemande = onCall(APPEL, async (req) => {
   await limiter(uid, 'besoin', 20);
   const pro = (await db.doc('pros/' + uid).get()).data();
   if (req.auth?.token.role !== 'pro' || !pro) throw erreur('permission-denied', 'Réservé aux professionnels.');
+  if (pro.siretVerifie !== true) throw erreur('failed-precondition', pro.siretStatut === 'ferme' ? 'Votre établissement est fermé selon le répertoire des entreprises : contactez-nous.' : 'Votre SIRET est en cours de vérification : réessayez un peu plus tard.');
   const d = (req.data ?? {}) as { espece?: string; kg?: number; prixMaxKg?: number; pour?: string; note?: string; livraison?: boolean };
   const espece = especeConnue(d.espece);
   const kg = Math.round(Number(d.kg) * 10) / 10; const prixMaxKg = Math.round(Number(d.prixMaxKg) * 100) / 100;

@@ -191,7 +191,9 @@ describe('Messagerie', () => {
 describe('Besoins des professionnels', () => {
   test('un pêcheur accepte le besoin d’un pro : commande à régler', async () => {
     await compte('pro');
-    await appeler('pro', 'choisirRole', { role: 'pro', prenom: 'Arlette', pro: { raison: 'Chez Tante Arlette', type: 'Restaurant', siret: '123 456 789 00012', commune: 'Le Robert' } });
+    await appeler('pro', 'choisirRole', { role: 'pro', prenom: 'Arlette', pro: { raison: 'Chez Tante Arlette', type: 'Restaurant', siret: '123 456 789 00015', commune: 'Le Robert' } });
+    assert.equal((await lire('pros/' + comptes.pro.uid)).siretVerifie, true, 'SIRET confirmé par le répertoire des entreprises');
+    assert.equal((await lire('pros/' + comptes.pro.uid)).siretNom, 'CHEZ TANTE ARLETTE');
     await compte('pro'); // relire le rôle « pro »
     await assert.rejects(appeler('pro', 'posterDemande', { espece: 'Thon 0696', kg: 15, prixMaxKg: 13, pour: 'Demain' }), /Espèce inconnue/);
     await assert.rejects(appeler('client', 'posterDemande', { espece: 'Thon jaune', kg: 15, prixMaxKg: 13, pour: 'Demain' }), /professionnels/);
@@ -247,6 +249,17 @@ describe('Protections contre les abus', () => {
     let refus = 0;
     for (let i = 0; i < 32; i++) { try { await appeler('client', 'envoyerMessage', { conv, texte: 'spam ' + i }); } catch (e) { if (/Trop de demandes/.test(e.message)) refus++; } }
     assert.ok(refus >= 1, 'cadence limitée (' + refus + ' refus)');
+  });
+  test('SIRET : chiffres faux ou établissement fermé refusés, inconnu mis en attente', async () => {
+    await compte('pro2');
+    const pro = (siret) => ({ role: 'pro', prenom: 'Lucie', pro: { raison: 'Le Comptoir', type: 'Restaurant', siret, commune: 'Le Robert' } });
+    await assert.rejects(appeler('pro2', 'choisirRole', pro('12345678900012')), /n’existe pas/);
+    await assert.rejects(appeler('pro2', 'choisirRole', pro('98765432100015')), /fermé/);
+    await appeler('pro2', 'choisirRole', pro('55500011100024'));
+    const p = await lire('pros/' + comptes.pro2.uid);
+    assert.equal(p.siretVerifie, false); assert.equal(p.siretStatut, 'introuvable');
+    await compte('pro2');
+    await assert.rejects(appeler('pro2', 'posterDemande', { espece: 'Thon jaune', kg: 5, prixMaxKg: 13, pour: 'Demain' }), /en cours de vérification/);
   });
   test('un pêcheur vérifié qui change d’immatriculation repasse en vérification', async () => {
     await appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'MQ 999999' } });

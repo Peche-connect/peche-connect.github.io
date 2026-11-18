@@ -2,6 +2,7 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
 import { doitCouper } from '../coupeCircuit';
+import { siretValide } from '../sirene';
 import {
   codeRetrait, creneaux, especeConnue, fermetureActive, FERMETURES_CONNUES, masquerNumeros, montantBloque, montantsPesee, nomPropre,
   nouveauNonce, portConnu, preparationConnue, preuveValide, signerBon,
@@ -74,4 +75,11 @@ test('coupe-circuit : seulement le budget « plafond », seulement une fois atte
   assert.equal(doitCouper({ budgetDisplayName: 'Plafond Pêche Connect', costAmount: 49, budgetAmount: 50 }), false);
   assert.equal(doitCouper({ budgetDisplayName: 'Alerte 10 €', costAmount: 80, budgetAmount: 10 }), false);
   assert.equal(doitCouper({}), false);
+});
+test('SIRET : clé de contrôle (Luhn), exception La Poste', () => {
+  assert.equal(siretValide('41816609600069'), true);
+  assert.equal(siretValide('12345678900015'), true);
+  assert.equal(siretValide('12345678900012'), false);
+  assert.equal(siretValide('35600000000010'), true, 'La Poste');
+  assert.equal(siretValide('1234567890001'), false);
 });

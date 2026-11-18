@@ -6,6 +6,7 @@ import { Bouton, Chip, Logo, T } from '../src/components/ui';
 import { PORTS } from '../src/data/demo';
 import { MODE_DEMO, useApp } from '../src/store';
 import { couleurs as c, polices as f } from '../src/theme';
+import { siretValide } from '../src/siret';
 import type { InfosPro } from '../src/types';
 
 const TYPES: InfosPro['type'][] = ['Restaurant', 'Poissonnerie', 'Revendeur', 'Traiteur'];
@@ -20,7 +21,8 @@ export default function InscriptionPro() {
   const [siret, setSiret] = useState('');
   const [commune, setCommune] = useState('Le Robert');
   const [adresse, setAdresse] = useState('');
-  const siretOk = siret.replace(/\D/g, '').length === 14;
+  const chiffres = siret.replace(/\D/g, '');
+  const siretOk = siretValide(chiffres);
   const complet = prenom.trim() && raison.trim() && siretOk;
 
   return (
@@ -39,7 +41,8 @@ export default function InscriptionPro() {
         </View>
         <View style={{ gap: 6 }}>
           <T gras>Numéro SIRET (14 chiffres)</T>
-          <TextInput value={siret} onChangeText={(v) => setSiret(v.replace(/[^\d ]/g, '').slice(0, 17))} placeholder="Ex. 123 456 789 00012" keyboardType="number-pad" style={st.champ} />
+          <TextInput value={siret} onChangeText={(v) => setSiret(v.replace(/[^\d ]/g, '').slice(0, 17))} placeholder="Ex. 123 456 789 00015" keyboardType="number-pad" style={st.champ} />
+          {chiffres.length === 14 && !siretOk ? <T style={{ color: c.alerte }}>Ce numéro SIRET n’existe pas : vérifiez les chiffres.</T> : <T gris petit>Vérifié auprès du répertoire des entreprises (INSEE).</T>}
           <T gris petit>Il apparaît sur vos factures. Nous le vérifions auprès de l’INSEE.</T>
         </View>
         <View style={{ gap: 8 }}>

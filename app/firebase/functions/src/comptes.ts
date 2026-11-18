@@ -7,6 +7,7 @@ import { onCall } from 'firebase-functions/v2/https';
 import { alerte, APPEL, connecte, db, erreur, FieldValue, journal, limiter, REGION, site, stripe, STRIPE_SECRET_KEY } from './commun';
 import { masquerNumeros, nomPropre, normaliser, portConnu, TYPES_PRO } from './regles';
 import { annulerBon, expirerSession } from './reservations';
+import { champsSiret, siretValide, verifierSiret } from './sirene';
 
 const exiger = <T,>(v: T | null, message: string): T => { if (v === null) throw erreur('invalid-argument', message); return v; };
 
@@ -28,12 +29,16 @@ export const choisirRole = onCall(APPEL, async (req) => {
     const p = d.pro ?? {};
     const siret = String(p.siret ?? '').replace(/\D/g, '');
     if (siret.length !== 14) throw erreur('invalid-argument', 'Le SIRET doit avoir 14 chiffres.');
+    if (!siretValide(siret)) throw erreur('invalid-argument', 'Ce numéro SIRET n’existe pas : vérifiez les chiffres.');
+    // contrôle auprès du répertoire des entreprises (si injoignable : refait plus tard par les tâches automatiques)
+    const v = await verifierSiret(siret);
+    if (v.statut === 'ferme') throw erreur('failed-precondition', 'Cet établissement est fermé selon le répertoire des entreprises (INSEE).');
     if (!TYPES_PRO.includes(p.type)) throw erreur('invalid-argument', 'Type d’établissement inconnu.');
     const raison = exiger(nomPropre(p.raison, 2, 120), 'Raison sociale invalide.');
     const commune = exiger(portConnu(p.commune) ?? nomPropre(p.commune, 2, 40), 'Commune invalide.');
     // l'adresse de livraison est montrée au pêcheur d'une commande livrée : jamais de numéro dedans
     const adresse = normaliser(p.adresse).slice(0, 200);
-    await db.doc('pros/' + uid).set({ raison, type: p.type, siret, siretVerifie: false, commune, adresse: adresse ? masquerNumeros(adresse).texte : null });
+    await db.doc('pros/' + uid).set({ raison, type: p.type, siret, ...champsSiret(v), commune, adresse: adresse ? masquerNumeros(adresse).texte : null });
     profil.commune = portConnu(commune);
   } else if (existant?.role === 'pro') {
     await db.doc('pros/' + uid).delete(); // un ancien pro redevenu particulier perd la livraison et la facture
