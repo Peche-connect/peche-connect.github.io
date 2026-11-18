@@ -204,7 +204,7 @@ describe('Besoins des professionnels', () => {
     const r = await appeler('pecheur', 'accepterDemande', { id: d.id });
     code2 = r.code;
     const b = await lire('bons/' + code2);
-    assert.equal(b.statut, 'en_attente_paiement'); assert.equal(b.origine, 'demande'); assert.equal(b.pro.siret, '12345678900012');
+    assert.equal(b.statut, 'en_attente_paiement'); assert.equal(b.origine, 'demande'); assert.equal(b.pro.siret, '12345678900015');
     assert.equal((await lire('demandes/' + d.id)).statut, 'acceptee');
     await assert.rejects(appeler('pecheur', 'accepterDemande', { id: d.id }), /déjà été pris/);
     assert.equal(await lire('conversations/' + etalId + '_' + comptes.pro.uid), undefined, 'messagerie ouverte seulement après paiement');
