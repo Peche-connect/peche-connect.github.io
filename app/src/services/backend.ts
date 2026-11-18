@@ -10,7 +10,7 @@ import {
 } from 'firebase/auth';
 import {
   addDoc, arrayRemove, arrayUnion, collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, onSnapshot, orderBy,
-  query, serverTimestamp, Timestamp, updateDoc, where, type Firestore, type Unsubscribe,
+  limit, query, serverTimestamp, Timestamp, updateDoc, where, type Firestore, type Unsubscribe,
 } from 'firebase/firestore';
 import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions } from 'firebase/functions';
 import { connectStorageEmulator, getBlob, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
@@ -18,7 +18,7 @@ import { Platform } from 'react-native';
 import { activerAppCheck } from './appcheck';
 import * as N from './natif';
 import { normaliserProduit } from '../formats';
-import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Produit, Session } from '../types';
+import type { Avis, Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Produit, Session } from '../types';
 
 const CONFIG = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -191,7 +191,7 @@ export async function chargerEtals(avecAdresse: string[] = []): Promise<Etal[]> 
   return [...etals].map(([id, e]) => versEtal(id, e, prives.get(id)));
 }
 
-type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null; facture?: string | null };
+type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null; facture?: string | null; avis?: number | null };
 export async function chargerBons(moi: string): Promise<Bon[]> {
   const c = await droits();
   const qs = [query(collection(db(), 'bons'), where('clientId', '==', moi))];
@@ -205,7 +205,7 @@ export async function chargerBons(moi: string): Promise<Bon[]> {
       lignes: b.lignes.map((l) => ({ ...l, produitId: l.produitId ?? 'commande' })), creneau: b.creneau, montantBloque: Number(b.montantBloque),
       montantPaye: b.montantPaye == null ? undefined : Number(b.montantPaye),
       statut: b.statut === 'retire' ? 'retire' : b.statut === 'en_attente_paiement' ? 'a_payer' : 'reserve',
-      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(), facture: b.facture ?? undefined,
+      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(), facture: b.facture ?? undefined, avis: b.avis ?? undefined,
     }));
 }
 
@@ -395,7 +395,16 @@ export type Dossier = { etalId: string; prenom: string; port: string; bateau: st
 export type SignalementEquipe = { id: string; conv: string; bonCode: string | null; motif: string; bloquer: boolean; le: string | null; par: { prenom: string; role: string }; contre: { prenom: string; role: string } };
 export type FactureEquipe = { numero: string; bon: string; emiseLe: string; acheteur: string; vendeur: string; totalTtc: number };
 export const equipeAcces = async () => (await fonction<{ equipe: boolean }>('equipeAcces', {})).equipe;
-export const equipeTableau = () => fonction<{ dossiers: Dossier[]; signalements: SignalementEquipe[]; factures: FactureEquipe[] }>('equipeTableau', {});
+export type AvisEquipe = { code: string; etalId: string; prenom: string; note: number; commentaire: string; le: string | null };
+export const equipeTableau = () => fonction<{ dossiers: Dossier[]; signalements: SignalementEquipe[]; factures: FactureEquipe[]; avis: AvisEquipe[] }>('equipeTableau', {});
+export const equipeRetirerAvis = (code: string) => fonction<{ ok: boolean }>('equipeRetirerAvis', { code });
 export const equipeDossier = (etalId: string, decision: 'verifier' | 'refuser' | 'suspendre', motif = '') => fonction<{ statut: string }>('equipeDossier', { etalId, decision, motif });
 export const equipeSignalement = (id: string, decision: 'classer' | 'suspendre') => fonction<{ ok: boolean }>('equipeSignalement', { id, decision });
 export const equipeFacture = (numero: string) => fonction<{ nom: string; pdf: string }>('equipeFacture', { numero });
+
+// ───────── Avis ─────────
+export const laisserAvis = (code: string, note: number, commentaire: string) => fonction<{ ok: boolean }>('laisserAvis', { code, note, commentaire });
+export async function chargerAvis(etalId: string): Promise<Avis[]> {
+  const q = await getDocs(query(collection(db(), 'avis'), where('etalId', '==', etalId), orderBy('le', 'desc'), limit(5)));
+  return q.docs.map((d) => { const a = d.data(); return { code: d.id, prenom: a.prenom, note: a.note, commentaire: a.commentaire ?? '', le: a.le?.toDate?.().toISOString() ?? '' }; });
+}

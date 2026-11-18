@@ -49,7 +49,7 @@ export default function Carte() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {etalsPort.map((e) => (
               <Pressable key={e.id} onPress={() => router.push({ pathname: '/etal/[id]', params: { id: e.id } })} style={[st.mini, { width: etalsPort.length > 1 ? 270 : 340 }]}>
-                <T tresGras>Étal de {e.pecheur} · {String(e.note).replace('.', ',')} ★</T>
+                <T tresGras>Étal de {e.pecheur} · {e.avis ? String(e.note).replace('.', ',') + ' ★' : 'Nouveau'}</T>
                 <T gris petit numberOfLines={1}>{e.produits.map((p) => p.espece).join(', ')}</T>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   {app.minPrix(e) !== null ? <Prix texte={'dès ' + euro(app.minPrix(e)!) + '/kg'} /> : <View />}

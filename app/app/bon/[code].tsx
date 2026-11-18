@@ -10,6 +10,7 @@ import { Bouton, EnTete, Ligne, Pastille, T, Vide } from '../../src/components/u
 import { PORTS } from '../../src/data/demo';
 import { detailTva, euro, kg, TVA_PRODUITS_MER } from '../../src/format';
 import { cleLigne, libelleLigne, preparationLigne, quantiteLigne } from '../../src/formats';
+import { NoterAchat } from '../../src/components/Avis';
 import { MODE_DEMO, useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -38,6 +39,7 @@ export default function BonEcran() {
         <T gris>Comme pour une réservation, seul le poids réel est débité à la pesée.</T>
         {paye ? null : <Bouton titre={'Payer ' + euro(b.montantBloque) + ' max'} onPress={() => app.payerBon(b.code)} />}
         <T gris petit>La messagerie avec le pêcheur s’ouvre une fois la commande réglée.</T>
+        {retire ? <NoterAchat code={b.code} deja={b.avis} /> : null}
         <Suivi code={b.code} statut={b.statut} />
       </ScrollView>
     </SafeAreaView>

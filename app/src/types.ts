@@ -75,7 +75,11 @@ export type Bon = {
   creeLe: number;
   date?: string; // date de création (mode réel), pour le relevé mensuel
   facture?: string; // numéro de facture (pros), ex. FA-2026-000001
+  avis?: number; // note donnée par le client après le retrait (1 à 5)
 };
+
+// Avis public d'un client sur un étal (après un achat retiré)
+export type Avis = { code: string; prenom: string; note: number; commentaire: string; le: string };
 
 // Une étape du suivi d'un bon (réservée, payée, retirée…), écrite par le serveur
 export type EtapeSuivi = { etape: 'reservee' | 'commande_creee' | 'payee' | 'paiement_refuse' | 'retiree' | 'annulee' | 'facture_emise'; par: string; quand: number; details: Record<string, unknown> };

@@ -322,6 +322,17 @@ describe('Formats de vente (kilo, pièce, barquettes, lot)', () => {
     const r = await appeler('pecheur', 'validerPesee', { code: fc, poids: [4.1, 1.1, 2], preuve: codeRetrait });
     assert.equal(r.montantPaye, 99.2, '4,1 × 14 + 1,1 × 19 + 2 × 10 + 0,90');
   });
+  test('avis réel après le retrait : un seul par bon, numéros masqués, note calculée par le serveur', async () => {
+    await assert.rejects(appeler('client', 'laisserAvis', { code: fc, note: 6 }), /1 à 5/);
+    await assert.rejects(appeler('autre', 'laisserAvis', { code: fc, note: 1 }), /Bon introuvable/);
+    await appeler('client', 'laisserAvis', { code: fc, note: 4, commentaire: 'Très frais ! Appelez-moi au 0696 12 34 56' });
+    await assert.rejects(appeler('client', 'laisserAvis', { code: fc, note: 5 }), /déjà donné/);
+    const a = await lire('avis/' + fc);
+    assert.equal(a.note, 4); assert.ok(!a.commentaire.includes('0696')); assert.equal(a.clientId, undefined, 'pas d’identifiant public');
+    const e = await lire('etals/' + etalId);
+    assert.equal(e.noteNombre, 1); assert.equal(e.note, 4); assert.equal(e.avis, 1);
+    assert.equal((await lire('bons/' + fc)).avis, 4);
+  });
   test('republier garde les poissons encore en vente (paniers en cours)', async () => {
     const reste = (await lire('etals/' + etalId)).produits[1].pieces[0];
     await appeler('pecheur', 'publierArrivage', { lignes: [
@@ -422,6 +433,14 @@ describe('Espace équipe', () => {
     const r = await db.collection('signalements').add({ conv: 'x_y', par: comptes.client.uid, contre: comptes.robot.uid, motif: 'Insultes', bloquer: true, le: Timestamp.now(), traite: false });
     await appeler('equipe', 'equipeSignalement', { id: r.id, decision: 'suspendre' });
     assert.equal((await getAuth().getUser(comptes.robot.uid)).disabled, true, 'client bloqué');
+  });
+  test('avis abusif retiré : note de l’étal recalculée', async () => {
+    const t = await appeler('equipe', 'equipeTableau', {});
+    const a = t.avis.find((x) => x.etalId === etalId);
+    await appeler('equipe', 'equipeRetirerAvis', { code: a.code });
+    const e = await lire('etals/' + etalId);
+    assert.equal(e.avis, 0); assert.equal(e.noteNombre, 0);
+    assert.equal(await lire('avis/' + a.code), undefined);
   });
   test('facture archivée téléchargeable par l’équipe', async () => {
     const t = await appeler('equipe', 'equipeTableau', {});

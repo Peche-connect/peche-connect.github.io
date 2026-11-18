@@ -42,6 +42,8 @@ before(async () => {
     await setDoc(doc(db, 'conversations', CONV, 'messages', 'm1'), { auteur: 'systeme', texte: 'Réservation payée' });
     await setDoc(doc(db, 'demandes/d1'), { proId: 'proD', proRaison: 'Chez Tante Arlette', proType: 'Restaurant', proCommune: 'Le Robert', espece: 'Thon jaune', kg: 15, prixMaxKg: 13, pour: 'Demain', statut: 'ouverte' });
     await setDoc(doc(db, 'reglages/general'), { fraisService: 0.9 });
+    await setDoc(doc(db, 'reglages/equipe'), { emails: ['equipe@peche-connect.fr'] });
+    await setDoc(doc(db, 'avis/R-100'), { etalId: ETAL, prenom: 'Sophie', note: 5, commentaire: 'Très frais' });
     await setDoc(doc(db, 'bons/R-100/historique/0001'), { n: 1, etape: 'reservee', par: 'client', uid: 'clientB' });
     await setDoc(doc(db, 'factures/FA-2026-000001'), { numero: 'FA-2026-000001', proId: 'proD', pecheurId: 'pecheurA', totalTtc: 190.7 });
   });
@@ -57,6 +59,8 @@ describe('Visiteur non connecté', () => {
   test('bons inaccessibles', () => assertFails(getDoc(doc(visiteur(), 'bons/R-100'))));
   test('profils inaccessibles', () => assertFails(getDoc(doc(visiteur(), 'profils/clientB'))));
   test('lit les réglages', () => assertSucceeds(getDoc(doc(visiteur(), 'reglages/general'))));
+  test('la liste de l’équipe reste privée', () => assertFails(getDoc(doc(visiteur(), 'reglages/equipe'))));
+  test('lit les avis d’un étal', () => assertSucceeds(getDocs(query(collection(visiteur(), 'avis'), where('etalId', '==', ETAL)))));
 });
 
 describe('Client sans bon', () => {
@@ -80,6 +84,7 @@ describe('Client sans bon', () => {
 });
 
 describe('Client avec un bon payé', () => {
+  test('ne peut pas écrire un avis lui-même (seul le serveur, après le retrait)', () => assertFails(setDoc(doc(qui(...CLIENT_B), 'avis/R-100'), { etalId: ETAL, prenom: 'Sophie', note: 5, commentaire: '' })));
   test('adresse exacte débloquée', () => assertSucceeds(getDoc(doc(qui(...CLIENT_B), 'etals', ETAL, 'prive', 'infos'))));
   test('mais pas celle d’un autre pêcheur', () => assertFails(getDoc(doc(qui(...CLIENT_B), 'etals', ETAL2, 'prive', 'infos'))));
   test('voit son bon', () => assertSucceeds(getDoc(doc(qui(...CLIENT_B), 'bons/R-100'))));

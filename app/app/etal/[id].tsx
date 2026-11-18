@@ -6,6 +6,7 @@ import { IcVerrou } from '../../src/components/icones';
 import { Bouton, Chip, Feuille, Pastille, Prix, Rond, Stepper, T, Vide, s } from '../../src/components/ui';
 import { euro, heure, kg } from '../../src/format';
 import { disponible, offre, sousTotal } from '../../src/formats';
+import { ListeAvis } from '../../src/components/Avis';
 import { useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -36,7 +37,7 @@ export default function EtalEcran() {
         </View>
         <View style={{ padding: 16, gap: 8 }}>
           <T tresGras style={{ fontSize: 26 }}>Étal de {e.pecheur}</T>
-          <T gris>{String(e.note).replace('.', ',')} ★ ({e.avis} avis) · {e.port} · {app.km(e)} km</T>
+          <T gris>{e.avis ? String(e.note).replace('.', ',') + ' ★ (' + e.avis + ' avis)' : 'Nouveau'} · {e.port} · {app.km(e)} km</T>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
             <Pastille texte={'Débarqué ' + heure(e.debarque) + ' · ' + app.depuis(e)} fonce={!app.frais(e)} />
             <Pastille texte={'Retrait jusqu’à ' + heure(e.limiteRetrait)} style={{ backgroundColor: c.doux }} />
@@ -102,6 +103,7 @@ export default function EtalEcran() {
           <IcVerrou couleur={c.gris} taille={18} />
           <T gris petit style={{ flex: 1 }}>L’adresse exacte et la messagerie avec {e.pecheur} s’ouvrent après la réservation.</T>
         </View>
+        <ListeAvis etalId={e.id} nombre={e.avis} />
       </ScrollView>
       <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: c.ligne }}>
         <Bouton titre="Voir mon panier" desactive={!nb} onPress={() => router.push('/panier')}

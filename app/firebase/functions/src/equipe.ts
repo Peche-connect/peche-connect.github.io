@@ -24,10 +24,11 @@ const date = (x: unknown) => (x as { toDate?: () => Date })?.toDate?.()?.toISOSt
 // Tout ce qui attend l'équipe, en un appel
 export const equipeTableau = onCall(APPEL, async (req) => {
   await membreEquipe(req);
-  const [attente, signalements, factures] = await Promise.all([
+  const [attente, signalements, factures, avis] = await Promise.all([
     db.collection('etals').where('statut', '==', 'en_attente').limit(50).get(),
     db.collection('signalements').where('traite', '==', false).limit(50).get(),
     db.collection('factures').orderBy('emiseLe', 'desc').limit(30).get(),
+    db.collection('avis').orderBy('le', 'desc').limit(30).get(),
   ]);
   const dossiers = await Promise.all(attente.docs.map(async (d) => {
     const e = d.data();
@@ -49,6 +50,7 @@ export const equipeTableau = onCall(APPEL, async (req) => {
   }));
   return {
     dossiers, signalements: sig.sort((a, b) => String(b.le).localeCompare(String(a.le))),
+    avis: avis.docs.map((d) => { const a = d.data(); return { code: d.id, etalId: a.etalId, prenom: a.prenom, note: a.note, commentaire: a.commentaire, le: date(a.le) }; }),
     factures: factures.docs.map((d) => { const f = d.data(); return { numero: f.numero, bon: f.bon, emiseLe: f.emiseLe, acheteur: f.acheteur?.raison ?? '', vendeur: f.vendeur?.prenom ?? '', totalTtc: f.totalTtc }; }),
   };
 });

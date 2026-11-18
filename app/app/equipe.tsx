@@ -19,6 +19,7 @@ const DEMO: Tableau = {
   signalements: [
     { id: 's1', conv: 'jm_x', bonCode: 'R-12', motif: 'Le pêcheur me demande de payer en liquide en dehors de l’appli.', bloquer: false, le: new Date().toISOString(), par: { prenom: 'Sophie', role: 'client' }, contre: { prenom: 'Jean-Marc', role: 'pêcheur' } },
   ],
+  avis: [{ code: 'R-9', etalId: 'jm', prenom: 'Kévin', note: 1, commentaire: 'Nul !!! appelez-moi au •• •• •• •• ••', le: new Date().toISOString() }],
   factures: [{ numero: 'FA-2026-000001', bon: 'R-31', emiseLe: new Date().toISOString(), acheteur: 'Le Comptoir du Port', vendeur: 'Jean-Marc', totalTtc: 182.4 }],
 };
 const MOTIFS = ['Numéro de marin introuvable', 'Immatriculation ne correspond pas', 'Pièce illisible : à renvoyer', 'Pas pêcheur professionnel'];
@@ -49,7 +50,7 @@ export default function Equipe() {
   };
   const decider = (d: B.Dossier, decision: 'verifier' | 'refuser' | 'suspendre', m = '') =>
     agir(() => B.equipeDossier(d.etalId, decision, m), (x) => ({ ...x, dossiers: x.dossiers.filter((y) => y.etalId !== d.etalId) }),
-      decision === 'verifier' ? d.prenom + ' est vérifié : il peut vendre (dès que son compte de paiement est prêt).' : 'Dossier de ' + d.prenom + (decision === 'refuser' ? ' refusé' : ' suspendu') + ' ; le motif lui est envoyé.');
+      decision === 'verifier' ? 'Dossier de ' + d.prenom + ' vérifié : vente possible dès que son compte de paiement est prêt.' : 'Dossier de ' + d.prenom + (decision === 'refuser' ? ' refusé' : ' suspendu') + ' ; le motif lui est envoyé.');
   const signalement = (s: B.SignalementEquipe, decision: 'classer' | 'suspendre') =>
     agir(() => B.equipeSignalement(s.id, decision), (x) => ({ ...x, signalements: x.signalements.filter((y) => y.id !== s.id) }),
       decision === 'classer' ? 'Signalement classé.' : 'Compte de ' + s.contre.prenom + ' suspendu.');
@@ -99,6 +100,15 @@ export default function Equipe() {
               </View>
             </View>
           )) : <T gris>Aucun signalement à traiter.</T>}
+
+          <T tresGras style={{ fontSize: 18, marginTop: 10 }}>Derniers avis</T>
+          <T gris petit>Retirez seulement un avis insultant ou hors sujet : la note de l’étal est recalculée.</T>
+          {t.avis.length ? t.avis.map((a) => (
+            <View key={a.code} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
+              <View style={{ flex: 1 }}><T><T tresGras>{a.prenom}</T> · {'★'.repeat(a.note)} · <T gris petit>étal {a.etalId} · {jour(a.le)}</T></T>{a.commentaire ? <T gris>{a.commentaire}</T> : null}</View>
+              <Pressable accessibilityRole="button" disabled={occupe} onPress={() => agir(() => B.equipeRetirerAvis(a.code), (x) => ({ ...x, avis: x.avis.filter((y) => y.code !== a.code) }), 'Avis retiré.')}><T gras style={{ color: c.alerte }}>Retirer</T></Pressable>
+            </View>
+          )) : <T gris>Aucun avis.</T>}
 
           <T tresGras style={{ fontSize: 18, marginTop: 10 }}>Dernières factures</T>
           {t.factures.length ? t.factures.map((x) => (

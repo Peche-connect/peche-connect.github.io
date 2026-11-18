@@ -200,7 +200,10 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
 
   // bons gardés 10 ans pour la comptabilité, mais détachés de la personne
   const lot = db.batch();
-  (await db.collection('bons').where('clientId', '==', uid).get()).docs.forEach((b) => lot.update(b.ref, { clientId: null, clientPrenom: 'Compte supprimé' }));
+  const mesBons = (await db.collection('bons').where('clientId', '==', uid).get()).docs;
+  mesBons.forEach((b) => lot.update(b.ref, { clientId: null, clientPrenom: 'Compte supprimé' }));
+  // avis gardés (la note de l'étal reste juste) mais sans prénom
+  for (const b of mesBons) if (b.data().avis) lot.update(db.doc('avis/' + b.id), { prenom: 'Ancien client' });
   if (etal) (await db.collection('bons').where('pecheurId', '==', uid).get()).docs.forEach((b) => lot.update(b.ref, { pecheurId: null }));
   await lot.commit();
   // conversations (côté client et côté pêcheur) : messages et fichiers vocaux effacés

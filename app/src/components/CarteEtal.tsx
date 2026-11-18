@@ -25,7 +25,7 @@ export function CarteEtal({ etal: e, large }: { etal: Etal; large?: boolean }) {
       </View>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <T tresGras style={{ fontSize: 16 }}>Étal de {e.pecheur}</T>
-        <View style={{ backgroundColor: c.doux, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}><T gras petit>{String(e.note).replace('.', ',')} ★</T></View>
+        <View style={{ backgroundColor: c.doux, borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 }}><T gras petit>{e.avis ? String(e.note).replace('.', ',') + ' ★' : 'Nouveau'}</T></View>
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
         <T gris numberOfLines={1} style={{ flexShrink: 1 }}>{[...new Set(dispo.map((p) => p.espece))].join(', ') || 'Pas encore d’arrivage'}</T>

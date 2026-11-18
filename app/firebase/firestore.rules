@@ -14,7 +14,10 @@ service cloud.firestore {
     function seulement(champs) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(champs); }
 
     // Réglages (frais, commission…) et périodes de fermeture : lisibles par tous
-    match /reglages/{doc} { allow read: if true; }
+    // réglages publics (montants, société) ; la liste de l'équipe reste privée
+    match /reglages/{doc} { allow read: if doc != 'equipe'; }
+    // avis : publics (prénom, note, commentaire, date), écrits seulement par le serveur
+    match /avis/{code} { allow read: if true; }
     match /fermetures/{doc} { allow read: if true; }
 
     // Profil : chacun lit le sien ; il peut changer son prénom, sa commune et ses alertes, jamais son

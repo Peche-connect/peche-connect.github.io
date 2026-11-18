@@ -1,4 +1,4 @@
-import type { Etal, Produit, TypePortion } from '../types';
+import type { Avis, Etal, Produit, TypePortion } from '../types';
 
 // Ports couverts et coordonnées (pour la carte et les distances)
 // Ports et abris de pêche de Martinique, d'après la carte « Le réseau de la pêche martiniquaise »
@@ -91,3 +91,14 @@ export const ETALS_DEMO: Etal[] = [
     lieu: 'Marché aux poissons du Marin', precision: 'sous la tente, à droite de l’entrée',
     produits: [pc('na1', 'Dorade coryphène', 12, [3, 3.8, 4.5], [['Entière', 0], ['Écaillé et vidé', 1]]), bq('na2', 'Thazard', 17, 'Darnes', 1, 6)] },
 ];
+
+// Avis de démonstration (en vrai : laissés par les clients après le retrait)
+const ilYa = (j: number) => new Date(Date.now() - j * 86400_000).toISOString();
+export const AVIS_DEMO: Record<string, Avis[]> = {
+  jm: [
+    { code: 'R-8', prenom: 'Sophie', note: 5, commentaire: 'Thon superbe, découpé en tranches devant moi.', le: ilYa(1) },
+    { code: 'R-5', prenom: 'Marc', note: 5, commentaire: 'Dorade entière très fraîche, Jean-Marc l’a vidée sur place.', le: ilYa(3) },
+    { code: 'R-3', prenom: 'Le Comptoir du Port', note: 4, commentaire: 'Bon poisson, un peu d’attente au retrait.', le: ilYa(6) },
+  ],
+  jo: [{ code: 'R-4', prenom: 'Claire', note: 5, commentaire: 'Lambi propre et bien nettoyé.', le: ilYa(2) }],
+};

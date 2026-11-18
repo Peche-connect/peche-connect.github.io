@@ -1,13 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { ETALS_DEMO, PORTS } from './data/demo';
-const VERSION_DEMO = 2; // à augmenter quand les données de démo changent de forme
+import { AVIS_DEMO, ETALS_DEMO, PORTS } from './data/demo';
+const VERSION_DEMO = 3; // à augmenter quand les données de démo changent de forme
 import { distanceKm, FRAIS_LIVRAISON, heure, kg, LIVRAISON_MIN_KG } from './format';
 import { cleLigne, disponible, libelleLigne, montantBloque, montantPaye, nomBarquette, nomLot, normaliserProduit, stockKg } from './formats';
 import { versDataUrl, type Enregistrement } from './audio';
 import * as B from './services/backend';
-import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Produit, Role, Session } from './types';
+import type { Avis, Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Produit, Role, Session } from './types';
 
 // Mode démo : tout est stocké sur le téléphone, aucun paiement réel.
 // Mode réel : dès que les clés Firebase EXPO_PUBLIC_FIREBASE_* sont renseignées (fichier .env, voir
@@ -34,6 +34,7 @@ type Etat = {
   horloge: number;
   demandes: Demande[];
   suivis: string[];                // espèces suivies (alertes d'arrivage)
+  avis: Record<string, Avis[]>;    // démo : avis par étal (mode réel : lus à l'ouverture de l'étal)
   erreur: string | null;
 };
 
@@ -61,6 +62,7 @@ const etatInitial = (): Etat => ({
     { id: 'd2', auteur: 'Poissonnerie du Bourg', pro: { raison: 'Poissonnerie du Bourg', type: 'Poissonnerie', siret: '98765432100015', commune: 'Le François' }, espece: 'Vivaneau', kg: 10, prixMaxKg: 16, pour: 'Aujourd’hui', statut: 'ouverte', creeLe: 7 * 60 + 30 },
   ] : [],
   suivis: [],
+  avis: MODE_DEMO ? JSON.parse(JSON.stringify(AVIS_DEMO)) : {},
   erreur: null,
 });
 
@@ -149,7 +151,7 @@ function useMagasin() {
       try {
         const lu = JSON.parse(v);
         // démo : une sauvegarde d'une ancienne version (sans les formats de vente) est ignorée
-        if (MODE_DEMO && lu.v === VERSION_DEMO) setE({ ...etatInitial(), ...lu, demandes: lu.demandes ?? etatInitial().demandes, suivis: lu.suivis ?? [], erreur: null });
+        if (MODE_DEMO && lu.v === VERSION_DEMO) setE({ ...etatInitial(), ...lu, demandes: lu.demandes ?? etatInitial().demandes, suivis: lu.suivis ?? [], avis: lu.avis ?? etatInitial().avis, erreur: null });
         else setE((x) => ({ ...x, commune: lu.commune ?? x.commune, panier: lu.panier ?? null, creneau: lu.creneau ?? null }));
       } catch { /* données illisibles : on repart de zéro */ }
     }).finally(async () => {
@@ -364,6 +366,23 @@ function useMagasin() {
     async lienQr(code: string): Promise<{ lien: string; pin: string }> {
       if (MODE_DEMO) return { lien: SITE + '/pesee/' + code + '?s=demo', pin: '482615' };
       try { const r = await B.monQr(code); return r.signature ? { lien: SITE + '/pesee/' + code + '?s=' + r.signature, pin: r.codeRetrait ?? '' } : { lien: '', pin: '' }; } catch { return { lien: '', pin: '' }; }
+    },
+    // Avis après le retrait : une note par bon (1 à 5) et un commentaire facultatif
+    async laisserAvis(code: string, note: number, commentaire: string): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.laisserAvis(code, note, commentaire); await recharger(); return true; } catch (err) { erreur(err); return false; } }
+      maj((x) => {
+        const b = x.bons.find((y) => y.code === code); if (!b || b.statut !== 'retire' || b.avis) return x;
+        b.avis = note;
+        const et = x.etals.find((t) => t.id === b.etalId);
+        if (et) { et.note = Math.round(((et.note * et.avis + note) / (et.avis + 1)) * 10) / 10; et.avis += 1; }
+        x.avis[b.etalId] = [{ code, prenom: x.session?.prenom ?? 'Vous', note, commentaire: commentaire.trim().slice(0, 300), le: new Date().toISOString() }, ...(x.avis[b.etalId] ?? [])].slice(0, 5);
+        return x;
+      });
+      return true;
+    },
+    async avisEtal(etalId: string): Promise<Avis[]> {
+      if (MODE_DEMO) return ref.current.avis[etalId] ?? [];
+      try { return await B.chargerAvis(etalId); } catch { return []; }
     },
     // Signaler une conversation ; bloquer = plus de messages ni d'appels
     async signaler(convId: string, motif: string, bloquer: boolean): Promise<boolean> {
