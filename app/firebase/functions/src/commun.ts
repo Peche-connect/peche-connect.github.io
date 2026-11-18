@@ -79,3 +79,7 @@ export async function limiter(uid: string, action: string, max: number, fenetreS
     t.set(ref, { horodatages: [...recents, maintenant], maj: FieldValue.serverTimestamp() });
   });
 }
+
+export const CODE_BON_OK = (c: string) => /^R-\d{1,9}$/.test(c);
+// Dépannage seulement : si l'anti-robots est coupé en production, on le signale à chaque démarrage
+if (process.env.FUNCTIONS_EMULATOR !== 'true' && process.env.APPCHECK === 'desactive') logger.error('ALERTE_SECURITE App Check désactivé sur les fonctions serveur');

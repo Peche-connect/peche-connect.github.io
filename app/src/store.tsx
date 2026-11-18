@@ -310,14 +310,15 @@ function useMagasin() {
       if (MODE_DEMO) { maj((x) => { const b = x.bons.find((y) => y.code === code); if (b) b.statut = 'reserve'; return x; }); return; }
       try { await B.payerBon(code); } catch (err) { erreur(err); }
     },
-    // Contenu du QR code du bon : lien signé par le serveur (non falsifiable)
-    async lienQr(code: string): Promise<string> {
-      if (MODE_DEMO) return SITE + '/pesee/' + code + '?s=demo';
-      try { const s = await B.monQr(code); return s ? SITE + '/pesee/' + code + '?s=' + s : ''; } catch { return ''; }
+    // Contenu du QR code du bon (lien signé par le serveur, non falsifiable) et code de retrait à 6 chiffres
+    // à dicter au pêcheur si le QR ne se lit pas
+    async lienQr(code: string): Promise<{ lien: string; pin: string }> {
+      if (MODE_DEMO) return { lien: SITE + '/pesee/' + code + '?s=demo', pin: '482615' };
+      try { const r = await B.monQr(code); return r.signature ? { lien: SITE + '/pesee/' + code + '?s=' + r.signature, pin: r.codeRetrait ?? '' } : { lien: '', pin: '' }; } catch { return { lien: '', pin: '' }; }
     },
     async verifierQr(code: string, signature: string): Promise<{ ok: boolean; message: string }> {
-      if (MODE_DEMO) return { ok: true, message: 'QR lu (démo : pas de vérification de signature).' };
-      try { const r = await B.verifierBon(code, signature); return { ok: true, message: 'QR authentique · ' + r.client + ' · ' + r.creneau }; }
+      if (MODE_DEMO) return /^\d{6}$/.test(signature) || signature === 'demo' ? { ok: true, message: 'Bon reconnu (démo : pas de vérification).' } : { ok: false, message: 'Code de retrait : 6 chiffres.' };
+      try { const r = await B.verifierBon(code, signature); return { ok: true, message: 'Bon authentique · ' + r.client + ' · ' + r.creneau }; }
       catch (err) { return { ok: false, message: err instanceof Error ? err.message : 'QR non valable.' }; }
     },
 
@@ -406,8 +407,8 @@ function useMagasin() {
       });
       return true;
     },
-    async validerPesee(code: string, poids: number[]): Promise<boolean> {
-      if (!MODE_DEMO) { try { await B.validerPesee(code, poids); await recharger(); return true; } catch (err) { erreur(err); return false; } }
+    async validerPesee(code: string, poids: number[], preuve: string): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.validerPesee(code, poids, preuve); await recharger(); return true; } catch (err) { erreur(err); return false; } }
       maj((x) => {
         const b = x.bons.find((y) => y.code === code)!;
         b.lignes.forEach((l, i) => (l.kg = poids[i]));

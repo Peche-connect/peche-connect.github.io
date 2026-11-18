@@ -11,16 +11,18 @@ const PROJET = process.env.GCLOUD_PROJECT;
 const require = createRequire(import.meta.url);
 const { db, Timestamp } = require('../functions/lib/commun.js');
 const { lancerTaches } = require('../functions/lib/taches.js');
+const { getAuth } = require('firebase-admin/auth');
 const AUTH = 'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:';
 const FONCTIONS = `http://127.0.0.1:5001/${PROJET}/europe-west9/`;
 const WHSEC = 'whsec_test_peche_connect';
 const stripe = new Stripe('sk_test_123', { apiVersion: '2025-02-24.acacia' });
 
 const comptes = {};
-async function compte(nom) { // crée (ou reconnecte, pour relire les droits) un utilisateur de test
+async function compte(nom, emailConfirme = true) { // crée (ou reconnecte, pour relire les droits) un utilisateur de test
   const email = nom + '@test.peche-connect.fr';
-  const url = AUTH + (comptes[nom] ? 'signInWithPassword' : 'signUp') + '?key=fausse-cle';
-  const r = await (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'motdepasse123', returnSecureToken: true }) })).json();
+  const entrer = async (action) => (await (await fetch(AUTH + action + '?key=fausse-cle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password: 'motdepasse123', returnSecureToken: true }) })).json());
+  let r = await entrer(comptes[nom] ? 'signInWithPassword' : 'signUp');
+  if (!comptes[nom] && emailConfirme) { await getAuth().updateUser(r.localId, { emailVerified: true }); r = await entrer('signInWithPassword'); }
   comptes[nom] = { uid: r.localId, jeton: r.idToken };
   return comptes[nom];
 }
@@ -70,23 +72,38 @@ describe('Inscription et mise en vente', () => {
     await db.doc('fermetures/test').set({ espece: 'Colas', debut: '01-01', fin: '12-31', motif: 'Zone fermée (test)' });
     await assert.rejects(appeler('pecheur', 'publierArrivage', { lignes: [{ espece: 'Colas', prixKg: 11, dispoKg: 5 }] }), /Vente fermée : Colas/);
   });
+  test('espèce ou préparation hors liste refusée (pas de texte libre : pas de numéro caché)', async () => {
+    await assert.rejects(appeler('pecheur', 'publierArrivage', { lignes: [{ espece: 'Thon 0696123456', prixKg: 14, dispoKg: 5 }] }), /Espèce inconnue/);
+    await assert.rejects(appeler('pecheur', 'publierArrivage', { lignes: [{ espece: 'Thon jaune', prixKg: 14, dispoKg: 5, preparations: [{ nom: 'Appelez le 0696', supplementKg: 0 }] }] }), /Préparation inconnue/);
+  });
   test('prix aberrant refusé', async () => {
     await assert.rejects(appeler('pecheur', 'publierArrivage', { lignes: [{ espece: 'Thon jaune', prixKg: 9999, dispoKg: 5 }] }), /invalide/);
   });
 });
 
 describe('Réservation et paiement', () => {
+  test('e-mail non confirmé : réservation refusée', async () => {
+    await compte('inconnu', false);
+    await appeler('inconnu', 'choisirRole', { role: 'client', prenom: 'Inconnu' });
+    const produit = (await lire('etals/' + etalId)).produits[0];
+    await assert.rejects(appeler('inconnu', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 1, preparation: 'Entier' }], creneau: 'Avant 10 h' }), /Confirmez votre adresse e-mail/);
+  });
   test('un client réserve : stock retiré, page de paiement Stripe', async () => {
     await compte('client'); await compte('autre');
     await appeler('client', 'choisirRole', { role: 'client', prenom: 'Sophie' });
     await appeler('autre', 'choisirRole', { role: 'client', prenom: 'Marc' });
     const produit = (await lire('etals/' + etalId)).produits[0];
-    const r = await appeler('client', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 1.5, preparation: 'En tranches' }], creneau: 'Avant 10 h' });
+    const r = await appeler('client', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 1.5, preparation: 'En tranches' }], creneau: 'Appelez 0696123456' });
     code = r.code;
+    assert.equal((await lire('bons/' + code)).creneau, 'Avant 10 h', 'créneau pris dans la liste, jamais en texte libre');
     assert.match(code, /^R-\d+$/); assert.ok(r.url, 'lien de paiement');
     const b = await lire('bons/' + code);
     assert.equal(b.statut, 'en_attente_paiement'); assert.equal(b.montantBloque, 27.3);
     assert.equal((await lire('etals/' + etalId)).produits[0].dispoKg, 8.5);
+  });
+  test('quantité plafonnée pour un particulier', async () => {
+    const produit = (await lire('etals/' + etalId)).produits[0];
+    await assert.rejects(appeler('autre', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 8.5, preparation: 'Entier' }, { produitId: produit.id, kg: 8, preparation: 'Entier' }], creneau: 'Avant 10 h' }), /Plus assez|Au plus 10 kg/);
   });
   test('impossible de réserver plus que le stock', async () => {
     const produit = (await lire('etals/' + etalId)).produits[0];
@@ -112,35 +129,62 @@ describe('Réservation et paiement', () => {
     const conv = await lire('conversations/' + etalId + '_' + comptes.client.uid);
     assert.deepEqual(conv.participants.sort(), [comptes.client.uid, comptes.pecheur.uid].sort());
   });
-  test('le QR signé n’est donné qu’au client du bon', async () => {
-    const { signature } = await appeler('client', 'monQr', { code });
-    assert.ok(signature && signature.length > 10);
-    assert.equal((await appeler('autre', 'monQr', { code })).signature, null);
-    const v = await appeler('pecheur', 'verifierBon', { code, signature });
+  let qr;
+  test('le QR signé et le code de retrait ne sont donnés qu’au client du bon', async () => {
+    qr = await appeler('client', 'monQr', { code });
+    assert.ok(qr.signature && qr.signature.length > 10); assert.match(qr.codeRetrait, /^\d{6}$/);
+    assert.deepEqual(await appeler('autre', 'monQr', { code }), { signature: null, codeRetrait: null });
+    const v = await appeler('pecheur', 'verifierBon', { code, signature: qr.signature });
     assert.equal(v.valide, true); assert.equal(v.client, 'Sophie');
-    await assert.rejects(appeler('pecheur', 'verifierBon', { code, signature: 'fabrique' + signature.slice(8) }), /non valable/);
+    assert.equal((await appeler('pecheur', 'verifierBon', { code, signature: qr.codeRetrait })).valide, true);
+    await assert.rejects(appeler('pecheur', 'verifierBon', { code, signature: 'fabrique' + qr.signature.slice(8) }), /non valable/);
   });
   test('un autre client ne peut pas valider la pesée', async () => {
-    await assert.rejects(appeler('autre', 'validerPesee', { code, poids: [1.4] }), /pas pour votre étal/);
+    await assert.rejects(appeler('autre', 'validerPesee', { code, poids: [1.4], preuve: qr.signature }), /introuvable/);
   });
-  test('pesée : seul le poids réel est encaissé', async () => {
-    const r = await appeler('pecheur', 'validerPesee', { code, poids: [1.4] });
+  test('sans le QR ni le code du client, pas d’encaissement', async () => {
+    await assert.rejects(appeler('pecheur', 'validerPesee', { code, poids: [1.4] }), /non valable/);
+    await assert.rejects(appeler('pecheur', 'validerPesee', { code, poids: [1.4], preuve: qr.codeRetrait === '000000' ? '000001' : '000000' }), /non valable/);
+    assert.equal((await lire('bons/' + code)).statut, 'reserve');
+  });
+  test('pesée avec le code de retrait : seul le poids réel est encaissé', async () => {
+    const r = await appeler('pecheur', 'validerPesee', { code, poids: [1.4], preuve: qr.codeRetrait });
     assert.equal(r.montantPaye, 23.3);
     const b = await lire('bons/' + code);
     assert.equal(b.statut, 'retire'); assert.equal(b.montantPaye, 23.3);
+    assert.equal((await appeler('client', 'monQr', { code })).signature, null, 'QR périmé après le retrait');
   });
   test('un bon déjà retiré ne se pèse pas deux fois', async () => {
-    await assert.rejects(appeler('pecheur', 'validerPesee', { code, poids: [1.4] }), /déjà clôturé/);
+    await assert.rejects(appeler('pecheur', 'validerPesee', { code, poids: [1.4], preuve: qr.codeRetrait }), /déjà clôturé/);
   });
 });
 
 describe('Messagerie', () => {
-  test('un numéro de téléphone tapé est masqué par le serveur', async () => {
-    const conv = etalId + '_' + comptes.client.uid;
-    const ref = await db.collection('conversations/' + conv + '/messages').add({ auteurId: comptes.client.uid, auteur: 'client', texte: 'Appelez-moi au 0696 12 34 56', creeLe: Timestamp.now() });
-    const ok = await attendre(async () => !(await ref.get()).data().texte.includes('0696'));
-    assert.ok(ok, 'numéro masqué');
-    assert.equal((await lire('conversations/' + conv)).luPecheur, false);
+  const conv = () => etalId + '_' + comptes.client.uid;
+  test('un numéro de téléphone tapé est masqué AVANT d’être enregistré', async () => {
+    const r = await appeler('client', 'envoyerMessage', { conv: conv(), texte: 'Appelez-moi au 0 6 9 6 / 12.34.56' });
+    assert.equal(r.masque, true);
+    const tous = (await db.collection('conversations/' + conv() + '/messages').get()).docs.map((d) => d.data().texte ?? '');
+    assert.ok(!tous.some((t) => /12.?34.?56/.test(t)), 'aucune trace du numéro en base');
+    assert.ok(await attendre(async () => (await lire('conversations/' + conv())).luPecheur === false), 'pêcheur prévenu');
+  });
+  test('un inconnu ne peut pas écrire dans la conversation', async () => {
+    await assert.rejects(appeler('autre', 'envoyerMessage', { conv: conv(), texte: 'Bonjour' }), /introuvable/);
+  });
+  test('position hors de Martinique refusée, position valable acceptée', async () => {
+    await assert.rejects(appeler('pecheur', 'envoyerMessage', { conv: conv(), position: { libelle: 'x', lat: 1, lon: 1 } }), /hors de Martinique/);
+    await assert.rejects(appeler('client', 'envoyerMessage', { conv: conv(), position: { libelle: 'x', lat: 14.6, lon: -61 } }), /vide/);
+    assert.equal((await appeler('pecheur', 'envoyerMessage', { conv: conv(), position: { libelle: 'Ponton', lat: 14.68, lon: -60.94 }, expireLe: Date.now() + 3600_000 })).ok, true);
+  });
+  test('message vocal qui n’existe pas refusé', async () => {
+    await assert.rejects(appeler('client', 'envoyerMessage', { conv: conv(), audio: { chemin: conv() + '/absent.m4a', duree: 5 } }), /introuvable/);
+    await assert.rejects(appeler('client', 'envoyerMessage', { conv: 'autre_conv', audio: { chemin: conv() + '/x.m4a', duree: 5 } }), /introuvable/);
+  });
+  test('conversation fermée après le retrait', async () => {
+    assert.ok((await lire('conversations/' + conv())).fermeeLe, 'date de fermeture posée par la pesée');
+    await db.doc('conversations/' + conv()).update({ fermeeLe: Timestamp.fromMillis(Date.now() - 1000) });
+    await assert.rejects(appeler('client', 'envoyerMessage', { conv: conv(), texte: 'Encore là ?' }), /fermée/);
+    await db.doc('conversations/' + conv()).update({ fermeeLe: null });
   });
 });
 
@@ -148,13 +192,20 @@ describe('Besoins des professionnels', () => {
   test('un pêcheur accepte le besoin d’un pro : commande à régler', async () => {
     await compte('pro');
     await appeler('pro', 'choisirRole', { role: 'pro', prenom: 'Arlette', pro: { raison: 'Chez Tante Arlette', type: 'Restaurant', siret: '123 456 789 00012', commune: 'Le Robert' } });
-    const d = await db.collection('demandes').add({ proId: comptes.pro.uid, proRaison: 'Chez Tante Arlette', proType: 'Restaurant', proCommune: 'Le Robert', espece: 'Thon jaune', kg: 15, prixMaxKg: 13, pour: 'Demain', statut: 'ouverte', creeLe: Timestamp.now() });
+    await compte('pro'); // relire le rôle « pro »
+    await assert.rejects(appeler('pro', 'posterDemande', { espece: 'Thon 0696', kg: 15, prixMaxKg: 13, pour: 'Demain' }), /Espèce inconnue/);
+    await assert.rejects(appeler('client', 'posterDemande', { espece: 'Thon jaune', kg: 15, prixMaxKg: 13, pour: 'Demain' }), /professionnels/);
+    const { id } = await appeler('pro', 'posterDemande', { espece: 'Thon jaune', kg: 15, prixMaxKg: 13, pour: 'Demain', note: 'Rappelez au 0696 12 34 56' });
+    const dem = await lire('demandes/' + id);
+    assert.equal(dem.proRaison, 'Chez Tante Arlette'); assert.ok(!dem.note.includes('0696'), 'note masquée');
+    const d = { id };
     const r = await appeler('pecheur', 'accepterDemande', { id: d.id });
     code2 = r.code;
     const b = await lire('bons/' + code2);
     assert.equal(b.statut, 'en_attente_paiement'); assert.equal(b.origine, 'demande'); assert.equal(b.pro.siret, '12345678900012');
     assert.equal((await lire('demandes/' + d.id)).statut, 'acceptee');
     await assert.rejects(appeler('pecheur', 'accepterDemande', { id: d.id }), /déjà été pris/);
+    assert.equal(await lire('conversations/' + etalId + '_' + comptes.pro.uid), undefined, 'messagerie ouverte seulement après paiement');
   });
   test('le pro obtient son lien de paiement', async () => {
     assert.ok((await appeler('pro', 'payerBon', { code: code2 })).url);
@@ -169,6 +220,7 @@ describe('Tâches automatiques', () => {
     const produit = (await lire('etals/' + etalId)).produits[0];
     const { code: c3 } = await appeler('autre', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 2, preparation: 'Entier' }], creneau: 'Avant 10 h' });
     await db.doc('bons/' + c3).update({ creeLe: Timestamp.fromMillis(Date.now() - 2 * 3600_000) });
+    await db.doc('bonsSecrets/' + c3).update({ sessionExpireLe: Timestamp.fromMillis(Date.now() - 60_000) }); // page de paiement fermée
     const avant = (await lire('etals/' + etalId)).produits[0].dispoKg;
     const bilan = await lancerTaches();
     assert.ok(bilan.positions >= 1 && bilan.abandons >= 1, JSON.stringify(bilan));
@@ -190,13 +242,16 @@ describe('Protections contre les abus', () => {
     for (let i = 0; i < 10; i++) await appeler('robot', 'choisirRole', { role: 'client', prenom: 'Robot' + i });
     await assert.rejects(appeler('robot', 'choisirRole', { role: 'client', prenom: 'Robot' }), /Trop de demandes/);
   });
-  test('messages en rafale supprimés et signalés', async () => {
+  test('messages en rafale bloqués', async () => {
     const conv = etalId + '_' + comptes.client.uid;
-    await Promise.all(Array.from({ length: 26 }, (_, i) => db.collection('conversations/' + conv + '/messages').add({ auteurId: comptes.client.uid, auteur: 'client', texte: 'spam ' + i, creeLe: Timestamp.now() })));
-    const ok = await attendre(async () => (await db.collection('journal').where('quoi', '==', 'messages en rafale bloqués').get()).size > 0, 20000);
-    assert.ok(ok, 'rafale signalée dans le journal');
-    const restants = (await db.collection('conversations/' + conv + '/messages').where('auteurId', '==', comptes.client.uid).get()).size;
-    assert.ok(restants < 26, 'des messages ont été supprimés (' + restants + ' restants)');
+    let refus = 0;
+    for (let i = 0; i < 32; i++) { try { await appeler('client', 'envoyerMessage', { conv, texte: 'spam ' + i }); } catch (e) { if (/Trop de demandes/.test(e.message)) refus++; } }
+    assert.ok(refus >= 1, 'cadence limitée (' + refus + ' refus)');
+  });
+  test('un pêcheur vérifié qui change d’immatriculation repasse en vérification', async () => {
+    await appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'MQ 999999' } });
+    assert.equal((await lire('etals/' + etalId)).statut, 'en_attente');
+    await db.doc('etals/' + etalId).update({ statut: 'verifie' }); // remis pour la suite
   });
 });
 

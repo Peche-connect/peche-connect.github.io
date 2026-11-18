@@ -10,10 +10,13 @@ export async function notifier(uids: string[], titre: string, texte: string, don
   for (let i = 0; i < envois.length; i += 100) {
     const lot = envois.slice(i, i + 100);
     try {
-      const r = await fetch('https://exp.host/--/api/v2/push/send', {
+      const envoyer = (l: typeof lot) => fetch('https://exp.host/--/api/v2/push/send', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify(lot.map(({ uid: _u, ...m }) => m)),
+        body: JSON.stringify(l.map(({ uid: _u, ...m }) => m)),
       });
+      let r = await envoyer(lot);
+      // un jeton défaillant ne doit pas bloquer les autres : en cas de refus du lot, envoi un par un
+      if (!r.ok && lot.length > 1) { for (const m of lot) await envoyer([m]).catch(() => null); continue; }
       const res = (await r.json()) as { data?: { details?: { error?: string } }[] };
       // jetons périmés (appli désinstallée) : retirés du profil
       await Promise.all((res.data ?? []).map((d, k) => d.details?.error === 'DeviceNotRegistered'

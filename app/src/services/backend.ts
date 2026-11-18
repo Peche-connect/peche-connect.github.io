@@ -280,25 +280,25 @@ export async function reserver(etalId: string, lignes: LignePanier[], creneau: s
   return r.code;
 }
 export async function payerBon(code: string) { const r = await fonction<{ url: string }>('payerBon', { code }); await ouvrir(r.url); }
-export const monQr = async (code: string) => (await fonction<{ signature: string | null }>('monQr', { code })).signature;
-export const verifierBon = (code: string, signature: string) => fonction<{ valide: boolean; client: string; creneau: string }>('verifierBon', { code, signature });
-export const validerPesee = (code: string, poids: number[]) => fonction<{ montantPaye?: number; annule?: boolean }>('validerPesee', { code, poids });
+export const monQr = (code: string) => fonction<{ signature: string | null; codeRetrait: string | null }>('monQr', { code });
+// « preuve » : signature lue dans le QR du client, ou son code de retrait à 6 chiffres
+export const verifierBon = (code: string, preuve: string) => fonction<{ valide: boolean; client: string; creneau: string }>('verifierBon', { code, signature: preuve });
+export const validerPesee = (code: string, poids: number[], preuve: string) => fonction<{ montantPaye?: number; annule?: boolean }>('validerPesee', { code, poids, preuve });
 
 async function moi() { const u = await utilisateur(); if (!u) throw new ErreurServeur('Session expirée, reconnectez-vous.'); return u.uid; }
-export async function envoyerMessage(conv: string, auteur: 'client' | 'pecheur', texte?: string, position?: Message['position'], expireLe?: Date) {
-  const m: Record<string, unknown> = { auteurId: await moi(), auteur, creeLe: serverTimestamp() };
-  if (texte) m.texte = texte.slice(0, 1000);
-  if (position) { m.position = { libelle: position.libelle, lat: position.lat, lon: position.lon }; m.positionExpireLe = Timestamp.fromDate(expireLe ?? new Date(Date.now() + 30 * 60000)); }
-  await essai(() => addDoc(collection(db(), 'conversations', conv, 'messages'), m));
+// Tous les messages passent par le serveur : il masque les numéros AVANT de les enregistrer
+export async function envoyerMessage(conv: string, _auteur: 'client' | 'pecheur', texte?: string, position?: Message['position'], expireLe?: Date) {
+  if (position) await fonction('envoyerMessage', { conv, position: { libelle: position.libelle, lat: position.lat, lon: position.lon }, expireLe: (expireLe ?? new Date(Date.now() + 30 * 60000)).getTime() });
+  else if (texte) await fonction('envoyerMessage', { conv, texte: texte.slice(0, 1000) });
 }
 // Message vocal : fichier dans messages-audio/<conversation>/, puis message qui le référence
-export async function envoyerAudio(conv: string, auteur: 'client' | 'pecheur', a: { uri: string; type: string; duree: number; donnees?: Blob }) {
+export async function envoyerAudio(conv: string, _auteur: 'client' | 'pecheur', a: { uri: string; type: string; duree: number; donnees?: Blob }) {
   const corps = a.donnees ?? (await (await fetch(a.uri)).blob());
   const ext = a.type.includes('mp4') || a.type.includes('m4a') || a.type.includes('aac') ? 'm4a' : a.type.includes('ogg') ? 'ogg' : 'webm';
   const chemin = conv + '/' + Date.now() + '.' + ext;
-  const uid = await moi();
+  await moi();
   await essai(() => uploadBytes(ref(_st, 'messages-audio/' + chemin), corps, { contentType: a.type }));
-  await essai(() => addDoc(collection(db(), 'conversations', conv, 'messages'), { auteurId: uid, auteur, audio: { chemin, duree: Math.max(1, Math.min(120, Math.round(a.duree))) }, creeLe: serverTimestamp() }));
+  await fonction('envoyerMessage', { conv, audio: { chemin, duree: Math.max(1, Math.min(120, Math.round(a.duree))) } });
 }
 // Adresse d'écoute d'un message vocal (fichier privé : droits vérifiés par les règles)
 // Le fichier est téléchargé avec le jeton de connexion de la personne : aucun lien partageable n'est créé.
@@ -331,11 +331,9 @@ export async function publierArrivage(_etalId: string, lignes: { espece: string;
   await fonction('publierArrivage', { lignes, ...(photoChemin ? { photoChemin } : {}) });
 }
 
-export async function posterDemande(d: { espece: string; kg: number; prixMaxKg: number; pour: Demande['pour']; note?: string; livraison?: Demande['livraison'] }, pro: InfosPro) {
-  const x: Record<string, unknown> = { proId: await moi(), proRaison: pro.raison, proType: pro.type, proCommune: pro.commune, espece: d.espece, kg: d.kg, prixMaxKg: d.prixMaxKg, pour: d.pour, statut: 'ouverte', creeLe: serverTimestamp() };
-  if (d.note) x.note = d.note;
-  if (d.livraison) x.livraison = d.livraison;
-  await essai(() => addDoc(collection(db(), 'demandes'), x));
+// Besoin d'un pro : créé par le serveur (coordonnées tirées de sa fiche, note masquée)
+export async function posterDemande(d: { espece: string; kg: number; prixMaxKg: number; pour: Demande['pour']; note?: string; livraison?: Demande['livraison'] }, _pro: InfosPro) {
+  await fonction('posterDemande', { espece: d.espece, kg: d.kg, prixMaxKg: d.prixMaxKg, pour: d.pour, note: d.note ?? '', livraison: !!d.livraison });
 }
 export async function annulerDemande(id: string) { await essai(() => updateDoc(doc(db(), 'demandes', id), { statut: 'annulee' })); }
 export const accepterDemande = (id: string) => fonction<{ code: string }>('accepterDemande', { id });
@@ -364,6 +362,6 @@ export async function enregistrerNotifications() {
     if (status !== 'granted') return;
     const projectId = process.env.EXPO_PUBLIC_EAS_PROJECT_ID;
     const jeton = (await N.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
-    await updateDoc(doc(db(), 'profils', await moi()), { jetons: arrayUnion(jeton) });
+    await fonction('enregistrerJeton', { jeton });
   } catch { /* notifications facultatives */ }
 }

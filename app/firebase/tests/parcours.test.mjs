@@ -1,7 +1,7 @@
 // Parcours complet dans un vrai navigateur, sur le site construit en mode réel et branché sur les
 // émulateurs Firebase (+ stripe-mock) : inscription et vérification d'un pêcheur, mise en vente,
 // connexion d'un client par lien e-mail, réservation, paiement confirmé par Stripe, bon + QR,
-// messages écrits et vocaux dans les deux sens, pesée par QR, export des données.
+// messages écrits et vocaux dans les deux sens, pesée avec le code de retrait, faux QR refusé, export des données.
 // Lancement (voir .github/workflows/verifications.yml) : site servi sur http://localhost:8091.
 import { strict as assert } from 'node:assert';
 import { createRequire } from 'node:module';
@@ -144,10 +144,14 @@ describe('Parcours complet en mode réel', () => {
     await voir(client, 'je suis à gauche de la cale', 20000); // reçu en direct
   });
 
-  test('pesée après scan du QR : seul le poids réel est encaissé', async () => {
-    const sig = (await db.doc('bonsSecrets/' + code).get()).data().signature;
-    await pecheur.goto(SITE + '/pesee/' + code + '?s=' + sig);
-    await voir(pecheur, 'QR authentique', 20000);
+  test('pesée avec le code de retrait dicté par le client : seul le poids réel est encaissé', async () => {
+    await client.goto(SITE + '/bon/' + code);
+    const texte = await client.getByText('code de retrait', { exact: false }).filter({ visible: true }).first().textContent({ timeout: 20000 });
+    const pin = (texte.match(/(\d{3}) (\d{3})/) ?? []).slice(1).join('');
+    assert.match(pin, /^\d{6}$/);
+    await pecheur.goto(SITE + '/pesee/' + code);
+    await pecheur.getByLabel('Code de retrait du client').filter({ visible: true }).fill(pin);
+    await voir(pecheur, 'Bon authentique', 20000);
     await pecheur.getByText('Valider la pesée', { exact: false }).click();
     await new Promise((ok) => setTimeout(ok, 3000));
     assert.equal((await db.doc('bons/' + code).get()).data().statut, 'retire');

@@ -18,6 +18,9 @@ export async function lancerTaches(maintenant = Date.now()) {
   for (const b of attente.docs) {
     const x = b.data();
     if (x.origine === 'demande' && x.creeLe.toMillis() > maintenant - 24 * 3600_000) continue;
+    // jamais pendant qu'une page de paiement est encore ouverte (sinon le client paierait un bon annulé)
+    const exp = (await db.doc('bonsSecrets/' + b.id).get()).data()?.sessionExpireLe;
+    if (exp && exp.toMillis() > maintenant) continue;
     await annulerBon(b.id);
     bilan.abandons++;
   }

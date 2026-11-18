@@ -15,7 +15,7 @@ export default function BonEcran() {
   const { code, paye } = useLocalSearchParams<{ code: string; paye?: string }>();
   const app = useApp();
   const [iti, setIti] = useState(false);
-  const [qr, setQr] = useState('');
+  const [qr, setQr] = useState({ lien: '', pin: '' });
   const b = app.e.bons.find((x) => x.code === code);
   const statut = b?.statut;
   useEffect(() => { if (b && statut === 'reserve') app.lienQr(b.code).then(setQr); }, [code, statut]);
@@ -35,7 +35,7 @@ export default function BonEcran() {
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>Montant bloqué (max)</T><T tresGras>{euro(b.montantBloque)}</T></View>
         <T gris>Comme pour une réservation, seul le poids réel est débité à la pesée.</T>
         {paye ? null : <Bouton titre={'Payer ' + euro(b.montantBloque) + ' max'} onPress={() => app.payerBon(b.code)} />}
-        <Bouton clair titre="Message" onPress={() => router.push({ pathname: '/chat/[id]', params: { id: e.id + '|Vous' } })} />
+        <T gris petit>La messagerie avec le pêcheur s’ouvre une fois la commande réglée.</T>
       </ScrollView>
     </SafeAreaView>
   );
@@ -57,8 +57,9 @@ export default function BonEcran() {
               <T tresGras style={{ fontSize: 50, letterSpacing: -1 }}>{b.code}</T>
               <Pastille texte={'Aujourd’hui · ' + b.creneau} />
             </View>
-            {retire ? null : <QR contenu={qr} />}
+            {retire ? null : <QR contenu={qr.lien} />}
           </View>
+          {!retire && qr.pin ? <T gris>Si le QR ne passe pas, dites au pêcheur votre code de retrait : <T tresGras style={{ color: c.texte, letterSpacing: 2 }}>{qr.pin.slice(0, 3) + ' ' + qr.pin.slice(3)}</T>. Ne le donnez qu’au moment de la pesée.</T> : null}
           <Pastille texte={retire ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) : 'À retirer · en attente de pesée'} style={retire ? { backgroundColor: '#dff3ea' } : { backgroundColor: c.doux }} />
           <Ligne />
           {b.lignes.map((l) => <View key={l.produitId} style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T>{l.espece}, {l.preparation.toLowerCase()}</T><T tresGras>{kg(l.kg)}</T></View>)}

@@ -17,15 +17,17 @@ service cloud.firestore {
     match /reglages/{doc} { allow read: if true; }
     match /fermetures/{doc} { allow read: if true; }
 
-    // Profil : chacun lit le sien ; il peut changer son prénom, sa commune, ses alertes et ses
-    // jetons de notification, jamais son rôle (choisi via la fonction « choisirRole »)
+    // Profil : chacun lit le sien ; il peut changer son prénom, sa commune et ses alertes, jamais son
+    // rôle (fonction « choisirRole ») ni ses jetons de notification (fonction « enregistrerJeton »).
+    // Pas de chiffres dans le prénom ni la commune : pas de numéro de téléphone caché.
+    function sansChiffres(t, max) { return t is string && t.size() >= 1 && t.size() <= max && t.matches('^[^\\p{N}<>@/:]+$'); }
     match /profils/{uid} {
       allow read: if connecte() && moi() == uid;
       allow update: if connecte() && moi() == uid
-        && seulement(['prenom', 'commune', 'suivis', 'jetons'])
-        && request.resource.data.prenom is string && request.resource.data.prenom.size() <= 40
-        && request.resource.data.suivis is list && request.resource.data.suivis.size() <= 20
-        && request.resource.data.jetons is list && request.resource.data.jetons.size() <= 10;
+        && seulement(['prenom', 'commune', 'suivis'])
+        && sansChiffres(request.resource.data.prenom, 40)
+        && (request.resource.data.get('commune', null) == null || sansChiffres(request.resource.data.commune, 40))
+        && request.resource.data.suivis is list && request.resource.data.suivis.size() <= 20;
     }
 
     // Professionnels : SIRET et adresse visibles seulement par le pro lui-même
@@ -71,28 +73,9 @@ service cloud.firestore {
 
       match /messages/{msg} {
         function conversation() { return get(/databases/$(base)/documents/conversations/$(conv)).data; }
-        function texteOk(m) { return !('texte' in m) || (m.texte is string && m.texte.size() > 0 && m.texte.size() <= 1000); }
-        function audioOk(m) {
-          return !('audio' in m) || (m.audio.keys().hasOnly(['chemin', 'duree'])
-            && m.audio.chemin is string && m.audio.chemin.matches('^' + conv + '/[A-Za-z0-9_.-]+$')
-            && m.audio.duree is int && m.audio.duree >= 1 && m.audio.duree <= 120);
-        }
-        function positionOk(m) {
-          return !('position' in m) || (m.position.keys().hasOnly(['libelle', 'lat', 'lon'])
-            && m.position.lat is number && m.position.lon is number
-            && m.positionExpireLe is timestamp && m.positionExpireLe <= request.time + duration.value(12, 'h'));
-        }
         allow read: if connecte() && moi() in conversation().participants;
-        allow create: if connecte()
-          && request.resource.data.keys().hasOnly(['auteurId', 'auteur', 'texte', 'audio', 'position', 'positionExpireLe', 'creeLe'])
-          && request.resource.data.auteurId == moi()
-          && request.resource.data.creeLe == request.time
-          && (('texte' in request.resource.data) || ('audio' in request.resource.data) || ('position' in request.resource.data))
-          && texteOk(request.resource.data) && audioOk(request.resource.data) && positionOk(request.resource.data)
-          && (
-            (request.resource.data.auteur == 'client' && moi() == conversation().clientId && !('position' in request.resource.data))
-            || (request.resource.data.auteur == 'pecheur' && moi() == conversation().pecheurId)
-          );
+        // écriture : seulement par la fonction « envoyerMessage » (numéros masqués avant enregistrement)
+        allow write: if false;
       }
     }
 
@@ -101,15 +84,7 @@ service cloud.firestore {
       allow read: if connecte() && (resource.data.proId == moi()
         || (pecheurVerifie() && resource.data.statut == 'ouverte')
         || (role() == 'pecheur' && resource.data.get('etalId', '') == request.auth.token.etalId));
-      allow create: if connecte() && role() == 'pro'
-        && request.resource.data.keys().hasOnly(['proId', 'proRaison', 'proType', 'proCommune', 'espece', 'kg', 'prixMaxKg', 'pour', 'note', 'livraison', 'statut', 'creeLe'])
-        && request.resource.data.proId == moi() && request.resource.data.statut == 'ouverte'
-        && request.resource.data.creeLe == request.time
-        && request.resource.data.espece is string && request.resource.data.espece.size() <= 40
-        && request.resource.data.kg is number && request.resource.data.kg > 0 && request.resource.data.kg <= 1000
-        && request.resource.data.prixMaxKg is number && request.resource.data.prixMaxKg > 0 && request.resource.data.prixMaxKg < 500
-        && request.resource.data.pour is string && request.resource.data.pour.size() <= 20 // « Aujourd’hui » ou « Demain »
-        && (!('note' in request.resource.data) || (request.resource.data.note is string && request.resource.data.note.size() <= 300));
+      // création : seulement par la fonction « posterDemande » (champs contrôlés, note masquée)
       // le pro peut seulement annuler un besoin encore ouvert
       allow update: if connecte() && resource.data.proId == moi() && resource.data.statut == 'ouverte'
         && seulement(['statut']) && request.resource.data.statut == 'annulee';

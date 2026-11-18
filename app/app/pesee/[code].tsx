@@ -1,11 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { ScrollView, View } from 'react-native';
+import { ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, EnTete, Ligne, Stepper, T, Vide } from '../../src/components/ui';
 import { euro, FRAIS_SERVICE, kg, sousTotal } from '../../src/format';
 import { useApp } from '../../src/store';
-import { couleurs as c } from '../../src/theme';
+import { couleurs as c, polices as f } from '../../src/theme';
 
 // Pesée devant le client : seul le poids réel est encaissé (capture Stripe en production)
 export default function Pesee() {
@@ -16,8 +16,12 @@ export default function Pesee() {
   const [poids, setPoids] = useState<number[]>(b ? b.lignes.map((l) => l.kg) : []);
   const [qr, setQr] = useState<{ ok: boolean; message: string } | null>(null);
   const [envoi, setEnvoi] = useState(false);
+  const [pin, setPin] = useState('');
+  const preuve = signature || pin;
   useEffect(() => { if (b && poids.length !== b.lignes.length) setPoids(b.lignes.map((l) => l.kg)); }, [b?.lignes.length]);
   useEffect(() => { if (signature && code) app.verifierQr(code, signature).then(setQr); }, [code, signature]);
+  // sans QR : le client dicte son code de retrait (6 chiffres), vérifié par le serveur
+  useEffect(() => { if (!signature && code) { if (pin.length === 6) app.verifierQr(code, pin).then(setQr); else setQr(null); } }, [pin]);
   if (app.e.session?.role !== 'pecheur') return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Pesée" /><Vide titre="Réservé au pêcheur" texte="Ce QR code se scanne depuis l’espace pêcheur de Pêche Connect." /></SafeAreaView>;
   if (!b) return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Pesée" /><Vide titre="Bon introuvable" texte={qr && !qr.ok ? qr.message : 'Ce bon n’est pas pour votre étal. Revenez aux réservations.'} /></SafeAreaView>;
   const lignesPesees = b.lignes.map((l, i) => ({ ...l, kg: poids[i] ?? l.kg }));
@@ -28,6 +32,14 @@ export default function Pesee() {
     <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
       <EnTete titre={'Pesée · ' + b.code} sousTitre={(b.client === 'Vous' ? 'Client démo' : b.client) + ' · ' + b.creneau} />
       <ScrollView>
+        {!signature && b.statut !== 'retire' ? (
+          <View style={{ margin: 16, marginBottom: 0, gap: 6 }}>
+            <T gras>Code de retrait du client</T>
+            <TextInput value={pin} onChangeText={(v) => setPin(v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" placeholder="6 chiffres (ou scannez son QR)" maxLength={6}
+              accessibilityLabel="Code de retrait du client" style={{ borderWidth: 1, borderColor: c.ligne, borderRadius: 12, padding: 12, fontSize: 22, letterSpacing: 4, fontFamily: f.tresGras, color: c.texte }} />
+            <T gris petit>Le client le lit sur son bon. Sans QR ni code, la pesée ne peut pas être encaissée.</T>
+          </View>
+        ) : null}
         {qr ? <View style={{ margin: 16, marginBottom: 0, padding: 12, borderRadius: 12, backgroundColor: qr.ok ? '#dff3ea' : '#fde7dc' }}><T gras style={{ color: qr.ok ? c.vert : c.alerte }}>{qr.ok ? '✓ ' : '✕ '}{qr.message}</T></View> : null}
         {b.statut === 'retire' ? (
           <Vide titre="Vente clôturée" texte={'Encaissé : ' + euro(b.montantPaye ?? 0) + '. Le reste de l’empreinte a été libéré.'} />
@@ -50,8 +62,8 @@ export default function Pesee() {
       </ScrollView>
       {b.statut === 'retire' ? null : (
         <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: c.ligne }}>
-          <Bouton titre={envoi ? 'Encaissement…' : poids.every((p) => p === 0) ? 'Annuler : rien à remettre' : 'Valider la pesée · ' + euro(montant)} desactive={trop || envoi || (qr !== null && !qr.ok)}
-            onPress={async () => { setEnvoi(true); const ok = await app.validerPesee(b.code, poids); setEnvoi(false); if (ok) router.canGoBack() ? router.back() : router.replace('/(pecheur)/reservations'); }} />
+          <Bouton titre={envoi ? 'Encaissement…' : poids.every((p) => p === 0) ? 'Annuler : rien à remettre' : 'Valider la pesée · ' + euro(montant)} desactive={trop || envoi || (!poids.every((p) => p === 0) && !qr?.ok)}
+            onPress={async () => { setEnvoi(true); const ok = await app.validerPesee(b.code, poids, preuve ?? ''); setEnvoi(false); if (ok) router.canGoBack() ? router.back() : router.replace('/(pecheur)/reservations'); }} />
         </View>
       )}
     </SafeAreaView>
