@@ -319,8 +319,8 @@ function useMagasin() {
     // Suivi étape par étape du bon (en démo : reconstitué à partir de son état)
     async suivi(code: string): Promise<EtapeSuivi[]> {
       if (!MODE_DEMO) { try { return await B.chargerSuivi(code); } catch { return []; } }
-      const b = e.bons.find((y) => y.code === code); if (!b) return [];
-      const j = new Date(); j.setHours(0, 0, 0, 0); const t = (m: number) => j.getTime() + m * 60_000;
+      const b = ref.current.bons.find((y) => y.code === code); if (!b) return [];
+      const d = new Date(); const t = (m: number) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) + (m + 240) * 60_000; // heure de Martinique (UTC−4)
       const s: EtapeSuivi[] = [{ etape: b.pro && b.statut === 'a_payer' ? 'commande_creee' : 'reservee', par: b.pro ? 'pro' : 'client', quand: t(b.creeLe), details: { montantBloque: b.montantBloque } }];
       if (b.statut !== 'a_payer') s.push({ etape: 'payee', par: 'stripe', quand: t(b.creeLe + 1), details: {} });
       if (b.statut === 'retire') s.push({ etape: 'retiree', par: 'pecheur', quand: t(b.creeLe + 60), details: { debite: b.montantPaye } });

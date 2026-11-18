@@ -141,3 +141,14 @@ les fonctions serveur refusent les appels de l'appli installée : c'est voulu.
 - Messagerie ouverte après le paiement, fermée 24 h après le retrait ; e-mail confirmé pour réserver ;
   plafonds de kilos et de réservations non payées ; cadence limitée sur chaque action.
 - SIRET des pros contrôlé (clé + répertoire public des entreprises de l'État) : rien à configurer.
+- Suivi de chaque commande étape par étape (qui, quand), écrit par le serveur et chaîné : une modification
+  après coup se voit. Factures des pros numérotées à la suite (FA-2026-000001), contenu figé, PDF archivé.
+
+### Factures : à faire avant d'ouvrir l'espace pro
+- Remplir dans la console Firebase le document `reglages/societe` : `raison`, `capital`, `siret`, `rcs`,
+  `tva` (numéro intracommunautaire), `adresse` (sinon la facture affiche des crochets […]).
+- Pour chaque pêcheur vérifié, ajouter dans `etals/<id>/prive/infos` : `nomLegal` (nom et prénom) et `siret`.
+- Faire valider par l'expert-comptable : taux de TVA (2,1 % poisson, 8,5 % services), mandat de facturation
+  (le pêcheur autorise Pêche Connect à facturer en son nom, clause dans les conditions), numérotation unique
+  ou par pêcheur, mentions obligatoires.
+- Sauvegardes (section 9) : garder les exports de la base **10 ans** pour la collection `factures`.
