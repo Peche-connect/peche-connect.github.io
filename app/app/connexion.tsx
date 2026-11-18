@@ -3,6 +3,7 @@ import { Redirect, router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BoutonApple } from '../src/components/BoutonApple';
 import { LiensLegaux } from '../src/components/LiensLegaux';
 import { Bouton, Logo, T } from '../src/components/ui';
 import * as B from '../src/services/backend';
@@ -167,11 +168,7 @@ export default function Connexion() {
                     <T tresGras style={{ fontSize: 18, color: '#4285F4' }}>G</T><T tresGras style={{ fontSize: 16 }}>Continuer avec Google</T>
                   </Pressable>
                 ) : null}
-                {B.CONNEXION_APPLE ? (
-                  <Pressable accessibilityRole="button" onPress={apple} disabled={occupe || prenomManquant} style={[st.fournisseur, { backgroundColor: '#111', borderColor: '#111' }, (occupe || prenomManquant) && { opacity: 0.4 }]}>
-                    <T tresGras style={{ fontSize: 16, color: '#fff' }}>Continuer avec Apple</T>
-                  </Pressable>
-                ) : null}
+                {B.CONNEXION_APPLE ? <BoutonApple onPress={apple} desactive={occupe || prenomManquant} /> : null}
                 {B.CONNEXION_EMAIL ? (
                   <View style={{ gap: 8 }}>
                     {B.CONNEXION_GOOGLE || B.CONNEXION_APPLE ? <T gris petit style={{ textAlign: 'center' }}>ou avec votre e-mail</T> : null}

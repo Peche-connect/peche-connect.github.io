@@ -184,10 +184,22 @@ describe('Messagerie', () => {
     await assert.rejects(appeler('client', 'envoyerMessage', { conv: conv(), audio: { chemin: conv() + '/absent.m4a', duree: 5 } }), /introuvable/);
     await assert.rejects(appeler('client', 'envoyerMessage', { conv: 'autre_conv', audio: { chemin: conv() + '/x.m4a', duree: 5 } }), /introuvable/);
   });
+  test('appel par Internet : jeton pour les deux personnes de la conversation seulement', async () => {
+    const r = await appeler('client', 'jetonAppel', { conv: conv() });
+    assert.match(r.jeton, /^007/); assert.match(r.canal, /^pc[0-9a-f]{40}$/); assert.equal(r.numero, 1); assert.equal(r.reponse, false);
+    assert.equal((await lire('conversations/' + conv())).appelEnCours.par, comptes.client.uid, 'le pêcheur est prévenu');
+    const msgs = (await db.collection('conversations/' + conv() + '/messages').get()).docs.map((d) => d.data().texte ?? '');
+    assert.ok(msgs.some((t) => /a lancé un appel/.test(t)));
+    const p = await appeler('pecheur', 'jetonAppel', { conv: conv() });
+    assert.equal(p.canal, r.canal); assert.equal(p.numero, 2); assert.equal(p.reponse, true, 'le pêcheur répond, sans faire sonner le client');
+    assert.equal((await lire('conversations/' + conv())).appelEnCours, undefined);
+    await assert.rejects(appeler('autre', 'jetonAppel', { conv: conv() }), /introuvable/);
+  });
   test('conversation fermée après le retrait', async () => {
     assert.ok((await lire('conversations/' + conv())).fermeeLe, 'date de fermeture posée par la pesée');
     await db.doc('conversations/' + conv()).update({ fermeeLe: Timestamp.fromMillis(Date.now() - 1000) });
     await assert.rejects(appeler('client', 'envoyerMessage', { conv: conv(), texte: 'Encore là ?' }), /fermée/);
+    await assert.rejects(appeler('client', 'jetonAppel', { conv: conv() }), /fermée/);
     await db.doc('conversations/' + conv()).update({ fermeeLe: null });
   });
 });

@@ -144,6 +144,13 @@ describe('Parcours complet en mode réel', () => {
     await voir(client, 'je suis à gauche de la cale', 20000); // reçu en direct
   });
 
+  test('appel par Internet : le pêcheur est prévenu, aucun numéro échangé', async () => {
+    await client.getByLabel('Appeler', { exact: true }).filter({ visible: true }).first().click();
+    await voir(client, 'vos numéros restent masqués', 20000);
+    await voir(pecheur, 'Sophie a lancé un appel', 20000); // reçu en direct dans la conversation
+    await client.getByLabel(/^(Raccrocher|Fermer)$/).filter({ visible: true }).first().click();
+  });
+
   test('pesée avec le code de retrait dicté par le client : seul le poids réel est encaissé', async () => {
     await client.goto(SITE + '/bon/' + code);
     const texte = await client.getByText('code de retrait', { exact: false }).filter({ visible: true }).first().textContent({ timeout: 20000 });

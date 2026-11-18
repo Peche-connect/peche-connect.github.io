@@ -38,8 +38,8 @@ jobs:
         run: npm ci && npm run test:unitaires
       - name: Réglages de test des émulateurs (fausses clés)
         run: |
-          printf 'STRIPE_SECRET_KEY=sk_test_123\nSTRIPE_WEBHOOK_SECRET=whsec_test_peche_connect\nSTRIPE_WEBHOOK_SECRET_CONNECT=-\nQR_SECRET=cle-qr-de-test-longue-0123456789\n' > functions/.secret.local
-          printf 'STRIPE_API_HOTE=127.0.0.1:12111\nSIRENE_API_HOTE=http://127.0.0.1:12112\nSITE_URL=http://localhost:8091\n' > functions/.env.local
+          printf 'STRIPE_SECRET_KEY=sk_test_123\nSTRIPE_WEBHOOK_SECRET=whsec_test_peche_connect\nSTRIPE_WEBHOOK_SECRET_CONNECT=-\nQR_SECRET=cle-qr-de-test-longue-0123456789\nAGORA_APP_CERTIFICATE=0123456789abcdef0123456789abcdef\n' > functions/.secret.local
+          printf 'STRIPE_API_HOTE=127.0.0.1:12111\nSIRENE_API_HOTE=http://127.0.0.1:12112\nAGORA_APP_ID=fedcba9876543210fedcba9876543210\nSITE_URL=http://localhost:8091\n' > functions/.env.local
       - run: npm ci
         working-directory: app/firebase/tests
       - name: Règles d'accès (base + fichiers)
@@ -63,8 +63,8 @@ jobs:
         working-directory: app/firebase/functions
         run: |
           npm ci && npm run build
-          printf 'STRIPE_SECRET_KEY=sk_test_123\nSTRIPE_WEBHOOK_SECRET=whsec_test_peche_connect\nSTRIPE_WEBHOOK_SECRET_CONNECT=-\nQR_SECRET=cle-qr-de-test-longue-0123456789\n' > .secret.local
-          printf 'STRIPE_API_HOTE=127.0.0.1:12111\nSIRENE_API_HOTE=http://127.0.0.1:12112\nSITE_URL=http://localhost:8091\n' > .env.local
+          printf 'STRIPE_SECRET_KEY=sk_test_123\nSTRIPE_WEBHOOK_SECRET=whsec_test_peche_connect\nSTRIPE_WEBHOOK_SECRET_CONNECT=-\nQR_SECRET=cle-qr-de-test-longue-0123456789\nAGORA_APP_CERTIFICATE=0123456789abcdef0123456789abcdef\n' > .secret.local
+          printf 'STRIPE_API_HOTE=127.0.0.1:12111\nSIRENE_API_HOTE=http://127.0.0.1:12112\nAGORA_APP_ID=fedcba9876543210fedcba9876543210\nSITE_URL=http://localhost:8091\n' > .env.local
       - name: Site en mode réel, branché sur les émulateurs
         working-directory: app
         env:

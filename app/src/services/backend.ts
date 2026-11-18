@@ -4,10 +4,9 @@
 // (app/firebase/firestore.rules et storage.rules) et des fonctions serveur. Aucune clé secrète ici.
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import {
   connectAuthEmulator, getAuth, GoogleAuthProvider, initializeAuth, isSignInWithEmailLink, OAuthProvider, onAuthStateChanged,
-  sendSignInLinkToEmail, signInWithEmailLink, signInWithPopup, signInWithRedirect, signOut, type Auth, type User,
+  sendSignInLinkToEmail, signInWithCredential, signInWithEmailLink, signInWithPopup, signInWithRedirect, signOut, type Auth, type User,
 } from 'firebase/auth';
 import {
   addDoc, arrayRemove, arrayUnion, collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, onSnapshot, orderBy,
@@ -16,6 +15,8 @@ import {
 import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions } from 'firebase/functions';
 import { connectStorageEmulator, getBlob, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
+import { activerAppCheck } from './appcheck';
+import * as N from './natif';
 import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Session } from '../types';
 
 const CONFIG = {
@@ -29,7 +30,8 @@ const CONFIG = {
 const EMULATEUR = process.env.EXPO_PUBLIC_FIREBASE_EMULATEUR ?? ''; // tests automatiques : « 127.0.0.1 »
 const SITE = (process.env.EXPO_PUBLIC_SITE_URL ?? 'https://peche-connect.fr').replace(/\/$/, '');
 export const CONNEXION_GOOGLE = process.env.EXPO_PUBLIC_CONNEXION_GOOGLE !== '0';
-export const CONNEXION_APPLE = process.env.EXPO_PUBLIC_CONNEXION_APPLE === '1';
+// Apple : sur le site si activé ; dans l'appli iPhone, toujours (règle de l'App Store dès qu'on propose Google)
+export const CONNEXION_APPLE = process.env.EXPO_PUBLIC_CONNEXION_APPLE === '1' || Platform.OS === 'ios';
 export const CONNEXION_EMAIL = process.env.EXPO_PUBLIC_CONNEXION_EMAIL !== '0';
 
 let _auth: Auth, _db: Firestore, _fn: Functions, _st: FirebaseStorage;
@@ -47,11 +49,8 @@ function init() {
   _db = getFirestore(app);
   _fn = getFunctions(app, 'europe-west9');
   _st = getStorage(app);
-  // Anti-robots (App Check) : prouve au serveur que l'appel vient bien du site officiel (reCAPTCHA invisible)
-  const cleRecaptcha = process.env.EXPO_PUBLIC_RECAPTCHA_ENTERPRISE_SITE_KEY;
-  if (Platform.OS === 'web' && cleRecaptcha && !EMULATEUR) {
-    initializeAppCheck(app, { provider: new ReCaptchaEnterpriseProvider(cleRecaptcha), isTokenAutoRefreshEnabled: true });
-  }
+  // Anti-robots (App Check) : prouve au serveur que l'appel vient bien du site ou de l'appli officiels
+  if (!EMULATEUR) activerAppCheck(app);
   if (EMULATEUR) {
     connectAuthEmulator(_auth, 'http://' + EMULATEUR + ':9099', { disableWarnings: true });
     connectFirestoreEmulator(_db, EMULATEUR, 8080);
@@ -92,15 +91,26 @@ export const maintenantMartinique = () => minutesMartinique(new Date());
 // ───────── Connexion : Google, Apple, ou lien reçu par e-mail (gratuits, sans SMS) ─────────
 const CLE_EMAIL = 'peche-connect-email-connexion';
 export async function connexionGoogle() {
-  if (Platform.OS !== 'web') throw new ErreurServeur('Dans l’appli installée, la connexion Google arrive avec la version App Store / Google Play.');
+  if (Platform.OS !== 'web') {
+    // appli installée : fenêtre Google native, puis le jeton est remis à Firebase
+    try { const idToken = await N.jetonGoogle(); await signInWithCredential(auth(), GoogleAuthProvider.credential(idToken)); } catch (e) { throw lisible(e); }
+    return;
+  }
   const p = new GoogleAuthProvider(); p.setCustomParameters({ prompt: 'select_account' });
   try { await signInWithPopup(auth(), p); } catch (e) {
     if ((e as { code?: string }).code === 'auth/popup-blocked') { await signInWithRedirect(auth(), p); return; }
     throw lisible(e);
   }
 }
-export async function connexionApple() {
-  if (Platform.OS !== 'web') throw new ErreurServeur('Dans l’appli installée, la connexion Apple arrive avec la version App Store.');
+export async function connexionApple(): Promise<string | undefined> {
+  if (Platform.OS !== 'web') {
+    // iPhone : « Se connecter avec Apple » natif ; Apple ne donne le prénom qu'à la toute première connexion
+    try {
+      const a = await N.jetonApple();
+      await signInWithCredential(auth(), new OAuthProvider('apple.com').credential({ idToken: a.idToken, rawNonce: a.nonce }));
+      return a.prenom;
+    } catch (e) { throw lisible(e); }
+  }
   const p = new OAuthProvider('apple.com'); p.addScope('email'); p.addScope('name'); p.setCustomParameters({ locale: 'fr' });
   try { await signInWithPopup(auth(), p); } catch (e) { throw lisible(e); }
 }
@@ -118,7 +128,7 @@ export async function terminerLienEmail(url: string, emailSaisi?: string) {
   await AsyncStorage.removeItem(CLE_EMAIL);
   return true;
 }
-export async function deconnexion() { await signOut(auth()); }
+export async function deconnexion() { await N.deconnexionNative(); await signOut(auth()); }
 export function surChangementSession(f: (connecte: boolean) => void) {
   return { unsubscribe: onAuthStateChanged(auth(), (u) => f(!!u)) };
 }
@@ -318,6 +328,9 @@ async function fichierPrive(chemin: string, siAbsent: string) {
   if (res.status !== 200) throw new ErreurServeur(siAbsent);
   return res.uri;
 }
+// Appel par Internet : jeton délivré par le serveur aux deux personnes de la conversation seulement
+export const jetonAppel = (conv: string) =>
+  fonction<{ appId: string; canal: string; jeton: string; numero: number; autre: number; reponse: boolean }>('jetonAppel', { conv });
 // Suivi étape par étape d'un bon (écrit par le serveur)
 export async function chargerSuivi(code: string): Promise<EtapeSuivi[]> {
   const q = await essai(() => getDocs(query(collection(db(), 'bons', code, 'historique'), orderBy('n'))));

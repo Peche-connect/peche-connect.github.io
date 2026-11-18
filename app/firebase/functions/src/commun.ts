@@ -23,6 +23,9 @@ export const STRIPE_SECRET_KEY = defineSecret('STRIPE_SECRET_KEY');
 export const STRIPE_WEBHOOK_SECRET = defineSecret('STRIPE_WEBHOOK_SECRET');
 export const STRIPE_WEBHOOK_SECRET_CONNECT = defineSecret('STRIPE_WEBHOOK_SECRET_CONNECT');
 export const QR_SECRET = defineSecret('QR_SECRET');
+// Appels par Internet (Agora) : identifiant public de l'application Agora + certificat secret qui signe les jetons d'appel
+export const AGORA_APP_ID = defineString('AGORA_APP_ID', { default: '' });
+export const AGORA_APP_CERTIFICATE = defineSecret('AGORA_APP_CERTIFICATE');
 export const SITE_URL = defineString('SITE_URL', { default: 'https://peche-connect.fr' });
 
 export const site = () => SITE_URL.value().replace(/\/$/, '');

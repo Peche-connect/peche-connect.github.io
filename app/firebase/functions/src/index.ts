@@ -4,5 +4,6 @@ export { creerReservation, payerBon, monQr, verifierBon, validerPesee, posterDem
 export { publierArrivage } from './arrivages';
 export { stripeWebhook } from './stripeWebhook';
 export { envoyerMessage, messageCree } from './messages';
+export { jetonAppel } from './appels';
 export { taches } from './taches';
 export { coupeCircuit } from './coupeCircuit';

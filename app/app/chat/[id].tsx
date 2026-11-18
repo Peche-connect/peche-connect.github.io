@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { BoutonAppel } from '../../src/components/BoutonAppel';
 import { Fil } from '../../src/components/Fil';
 import { Itineraire } from '../../src/components/Itineraire';
 import { EnTete, Pastille, T, Vide } from '../../src/components/ui';
@@ -20,7 +21,7 @@ export default function Chat() {
 
   return (
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: c.fond }}>
-      <EnTete titre={e.pecheur} sousTitre={'Étal de ' + e.port + ' · répond en ~5 min'} />
+      <EnTete titre={e.pecheur} sousTitre={'Étal de ' + e.port + ' · répond en ~5 min'} droite={<BoutonAppel id={id} />} />
       <Fil conv={conv} moi="client" nomAutre={e.pecheur} rapides={['Vous êtes où ?', 'J’arrive dans 10 min', 'Je suis en retard', 'Merci !']}
         onEnvoyer={(t) => app.envoyer(id, t, 'client')} onAudio={(a) => app.envoyerAudio(id, a, 'client')} onPosition={(m) => setPos(m)}
         avant={b ? (
