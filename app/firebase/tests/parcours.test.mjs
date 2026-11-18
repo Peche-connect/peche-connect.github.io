@@ -73,6 +73,7 @@ describe('Parcours complet en mode réel', () => {
     await pecheur.getByPlaceholder('Ex. Jean-Marc').fill('Jean-Marc');
     await pecheur.getByPlaceholder('Ex. Yole Bèl Lanmè').fill('Ti Moun');
     await pecheur.getByPlaceholder('Ex. FF 890414').fill('MQ 123456');
+    await pecheur.getByPlaceholder('Numéro d’identification du marin').fill('AB123456');
     await pecheur.getByText('Envoyer mon dossier').click();
     await voir(pecheur, 'Dossier envoyé');
     const q = await db.collection('etals').where('prenom', '==', 'Jean-Marc').get();

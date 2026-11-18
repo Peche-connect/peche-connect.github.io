@@ -18,7 +18,8 @@ export default function InscriptionPecheur() {
   const [port, setPort] = useState('Le Robert');
   const [bateau, setBateau] = useState('');
   const [immat, setImmat] = useState('');
-  const complet = prenom.trim() && bateau.trim() && immat.trim().length >= 5;
+  const [numero, setNumero] = useState('');
+  const complet = prenom.trim() && bateau.trim() && immat.trim().length >= 5 && numero.replace(/[^A-Za-z0-9]/g, '').length >= 4;
 
   if (session?.role === 'pecheur') {
     const verifie = session.statutPecheur === 'verifie';
@@ -57,8 +58,10 @@ export default function InscriptionPecheur() {
         </View>
         <Champ libelle="Nom de votre bateau" valeur={bateau} onChange={setBateau} exemple="Ex. Yole Bèl Lanmè" />
         <Champ libelle="Immatriculation du bateau" valeur={immat} onChange={(v) => setImmat(v.toUpperCase())} exemple="Ex. FF 890414" />
+        <Champ libelle="Votre numéro de marin pêcheur" valeur={numero} onChange={(v) => setNumero(v.toUpperCase())} exemple="Numéro d’identification du marin" />
+        <T gris petit style={{ marginTop: -8 }}>Il figure sur vos papiers de marin. Nous le vérifions nous-mêmes avant d’ouvrir votre étal ; il n’est jamais montré aux clients.</T>
         <Bouton titre="Envoyer mon dossier" desactive={!complet}
-          onPress={async () => await app.inscrirePecheur({ prenom: prenom.trim(), port, bateau: bateau.trim(), immatriculation: immat.trim(), telephone: tel ?? '' })} />
+          onPress={async () => await app.inscrirePecheur({ prenom: prenom.trim(), port, bateau: bateau.trim(), immatriculation: immat.trim(), numeroMarin: numero.trim(), telephone: tel ?? '' })} />
         <Bouton clair titre="Retour" onPress={() => router.replace('/connexion')} />
       </ScrollView>
     </SafeAreaView>

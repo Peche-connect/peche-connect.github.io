@@ -48,11 +48,14 @@ let etalId, code, code2;
 describe('Inscription et mise en vente', () => {
   test('un pêcheur s’inscrit : étal en attente de vérification', async () => {
     await compte('pecheur');
-    const r = await appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'mq 123456' } });
+    await assert.rejects(appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'mq 123456' } }), /numéro de marin/i);
+    const r = await appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'mq 123456', numeroMarin: 'ab 1234-56' } });
     etalId = r.etalId;
     const e = await lire('etals/' + etalId);
     assert.equal(e.statut, 'en_attente'); assert.equal(e.stripePret, false);
     assert.equal((await lire('etals/' + etalId + '/prive/infos')).immatriculation, 'MQ 123456');
+    const dossier = await lire('etals/' + etalId + '/verification/dossier');
+    assert.equal(dossier.numeroMarin, 'AB123456'); assert.equal(dossier.numeroVerifie, false, 'vérifié à la main par l’équipe');
   });
   test('il ne peut pas publier avant la vérification', async () => {
     await assert.rejects(appeler('pecheur', 'publierArrivage', { lignes: [{ espece: 'Thon jaune', prixKg: 14, dispoKg: 10 }] }), /pas encore vérifié/);
@@ -323,7 +326,7 @@ describe('Protections contre les abus', () => {
     await assert.rejects(appeler('pro2', 'posterDemande', { espece: 'Thon jaune', kg: 5, prixMaxKg: 13, pour: 'Demain' }), /en cours de vérification/);
   });
   test('un pêcheur vérifié qui change d’immatriculation repasse en vérification', async () => {
-    await appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'MQ 999999' } });
+    await appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'MQ 999999', numeroMarin: 'AB123456' } });
     assert.equal((await lire('etals/' + etalId)).statut, 'en_attente');
     await db.doc('etals/' + etalId).update({ statut: 'verifie' }); // remis pour la suite
   });

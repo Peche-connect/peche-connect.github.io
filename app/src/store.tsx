@@ -187,7 +187,7 @@ function useMagasin() {
       if (!MODE_DEMO) { try { await B.enregistrerPro(prenom, pro); await recharger(); maj((x) => ({ ...x, commune: PORTS[pro.commune] ? pro.commune : x.commune })); } catch (err) { erreur(err); } return; }
       maj((x) => ({ ...x, session: { telephone, role: 'client', prenom, pro }, commune: PORTS[pro.commune] ? pro.commune : x.commune }));
     },
-    async inscrirePecheur(infos: { prenom: string; port: string; bateau: string; immatriculation: string; telephone: string }) {
+    async inscrirePecheur(infos: { prenom: string; port: string; bateau: string; immatriculation: string; numeroMarin: string; telephone: string }) {
       if (!MODE_DEMO) { try { await B.inscrirePecheur(infos); await recharger(); } catch (err) { erreur(err); } return; }
       maj((x) => {
         const id = 'moi';

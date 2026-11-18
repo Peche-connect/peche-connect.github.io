@@ -165,8 +165,8 @@ async function choisirRole(data: Record<string, unknown>) {
 }
 export const enregistrerClient = (prenom: string, commune?: string) => choisirRole({ role: 'client', prenom, commune: commune ?? null });
 export const enregistrerPro = (prenom: string, pro: InfosPro) => choisirRole({ role: 'pro', prenom, pro: { ...pro, adresse: pro.adresse ?? '' } });
-export const inscrirePecheur = (i: { prenom: string; port: string; bateau: string; immatriculation: string }) =>
-  choisirRole({ role: 'pecheur', prenom: i.prenom, pecheur: { port: i.port, bateau: i.bateau, immatriculation: i.immatriculation } });
+export const inscrirePecheur = (i: { prenom: string; port: string; bateau: string; immatriculation: string; numeroMarin: string }) =>
+  choisirRole({ role: 'pecheur', prenom: i.prenom, pecheur: { port: i.port, bateau: i.bateau, immatriculation: i.immatriculation, numeroMarin: i.numeroMarin } });
 
 // ───────── Lecture des données ─────────
 type DocEtal = { prenom: string; port: string; note: number; avis: number; bateau: string; photoUrl: string | null; debarqueLe: Timestamp | null; limiteRetrait: number; produits: Etal['produits']; pecheurId: string };

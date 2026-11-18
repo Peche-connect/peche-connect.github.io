@@ -50,22 +50,30 @@ export const choisirRole = onCall(APPEL, async (req) => {
     const bateau = exiger(nomPropre(p.bateau, 1, 60), 'Nom du bateau invalide.');
     const immatriculation = normaliser(p.immatriculation).toUpperCase();
     if (!/^[A-Z0-9 -]{5,20}$/.test(immatriculation)) throw erreur('invalid-argument', 'Immatriculation invalide.');
+    // numéro d'identification du marin : vérifié à la main par l'équipe (pas de service public interrogeable),
+    // gardé à part, jamais montré aux clients
+    const numeroMarin = normaliser(p.numeroMarin).toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!/^[A-Z0-9]{4,20}$/.test(numeroMarin)) throw erreur('invalid-argument', 'Numéro de marin invalide.');
+    const dossierRef = etalRef.collection('verification').doc('dossier');
     const aRevoir = await db.runTransaction(async (t) => {
       const e = (await t.get(etalRef)).data();
       const prive = e ? (await t.get(etalRef.collection('prive').doc('infos'))).data() : undefined;
+      const dossier = e ? (await t.get(dossierRef)).data() : undefined;
       if (!e) {
         t.set(etalRef, { pecheurId: uid, prenom, port, bateau, statut: 'en_attente', stripePret: false, note: 5, avis: 0,
           photoUrl: null, debarqueLe: null, limiteRetrait: 12 * 60, produits: [], notifieLe: null, creeLe: FieldValue.serverTimestamp() });
         t.set(etalRef.collection('prive').doc('infos'), { lieu: 'Débarcadère de ' + port, precision: '', immatriculation });
+        t.set(dossierRef, { numeroMarin, numeroVerifie: false, soumisLe: FieldValue.serverTimestamp() });
         return false;
       }
-      const change = e.port !== port || e.bateau !== bateau || prive?.immatriculation !== immatriculation;
-      // un pêcheur vérifié qui change de bateau, d'immatriculation ou de port repasse en vérification
+      const change = e.port !== port || e.bateau !== bateau || prive?.immatriculation !== immatriculation || dossier?.numeroMarin !== numeroMarin;
+      // un pêcheur vérifié qui change de bateau, d'immatriculation, de port ou de numéro de marin repasse en vérification
       t.update(etalRef, { prenom, port, bateau, ...(change && e.statut === 'verifie' ? { statut: 'en_attente' } : {}) });
       t.set(etalRef.collection('prive').doc('infos'), { immatriculation }, { merge: true });
+      if (dossier?.numeroMarin !== numeroMarin) t.set(dossierRef, { numeroMarin, numeroVerifie: false, soumisLe: FieldValue.serverTimestamp() });
       return change && e.statut === 'verifie';
     });
-    if (!etalExistant) await journal(uid, 'inscription pêcheur à vérifier', { etalId: uid, port, bateau, immatriculation });
+    if (!etalExistant) await journal(uid, 'inscription pêcheur à vérifier', { etalId: uid, port, bateau, immatriculation, numeroMarin });
     else if (aRevoir) await alerte(uid, 'pêcheur vérifié : bateau, port ou immatriculation modifié, à revérifier', { port, bateau, immatriculation });
     profil.commune = port;
   }
@@ -168,7 +176,7 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
     return JSON.parse(JSON.stringify({
       exporte_le: new Date().toISOString(), compte: { id: uid, email: req.auth?.token.email ?? null },
       profil: profil.data() ?? null, professionnel: pro.data() ?? null,
-      etal: etal ? { ...etal.data(), prive: prive?.data() ?? null } : null,
+      etal: etal ? { ...etal.data(), prive: prive?.data() ?? null, verification: (await etal.ref.collection('verification').doc('dossier').get()).data() ?? null } : null,
       bons: bons.docs.map((b) => b.data()), conversations: await Promise.all(convs.docs.map(messagesDe)), besoins: demandes.docs.map((d) => d.data()),
       ventes: bonsEtal?.docs.map((b) => b.data()) ?? [], conversations_pecheur: convsEtal ? await Promise.all(convsEtal.docs.map(messagesDe)) : [],
       factures: [...facturesAchat.docs, ...facturesVente.docs].map((f) => f.data()),
@@ -206,6 +214,7 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
     await getStorage().bucket().deleteFiles({ prefix: 'arrivages/' + etal.id + '/' }).catch(() => {});
     await etal.ref.update({ statut: 'suspendu', prenom: 'Compte supprimé', bateau: '', photoUrl: null, produits: [], pecheurId: null });
     await etal.ref.collection('prive').doc('infos').set({ lieu: '', precision: '', immatriculation: '' });
+    await etal.ref.collection('verification').doc('dossier').delete();
   }
   await db.doc('pros/' + uid).delete();
   await profil.ref.delete();

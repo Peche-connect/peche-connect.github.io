@@ -34,7 +34,7 @@ async def main():
             await pg.get_by_placeholder('0696 12 34 56').fill('0696999999'); await clic('Recevoir le code')
             await pg.get_by_placeholder('••••••').fill('123456'); await clic('Valider', s=1200)
             await pg.get_by_placeholder('Ex. Jean-Marc').fill('Louis'); await pg.get_by_placeholder('Ex. Yole Bèl Lanmè').fill('Ti Moun')
-            await pg.get_by_placeholder('Ex. FF 890414').fill('FF 123456'); await clic('Envoyer mon dossier', s=1200)
+            await pg.get_by_placeholder('Ex. FF 890414').fill('FF 123456'); await pg.get_by_placeholder('Numéro d’identification du marin').fill('AB123456'); await clic('Envoyer mon dossier', s=1200)
             await clic('Démo : simuler la vérification'); await clic('Ouvrir mon compte de paiement'); await clic('Publier mon premier arrivage', s=1200)
             await clic('+ Ajouter une espèce'); await clic('Thon jaune', exact=True)
             await clic('+ Ajouter une espèce'); await clic('Vivaneau', exact=True, s=1200)
