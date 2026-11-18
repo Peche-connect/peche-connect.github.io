@@ -385,10 +385,56 @@ describe('Protections contre les abus', () => {
   });
 });
 
+describe('Espace équipe', () => {
+  test('réservé aux adresses listées dans reglages/equipe, e-mail confirmé', async () => {
+    await compte('equipe');
+    await assert.rejects(appeler('equipe', 'equipeTableau', {}), /Réservé à l’équipe/);
+    await db.doc('reglages/equipe').set({ emails: ['Equipe@test.peche-connect.fr'] });
+    assert.equal((await appeler('equipe', 'equipeAcces', {})).equipe, true);
+    assert.equal((await appeler('client', 'equipeAcces', {})).equipe, false);
+    await assert.rejects(appeler('pecheur', 'equipeDossier', { etalId, decision: 'verifier' }), /Réservé à l’équipe/);
+  });
+  test('dossier pêcheur : refus motivé, correction, puis vérification', async () => {
+    await db.doc('etals/' + etalId).update({ statut: 'en_attente' });
+    const t = await appeler('equipe', 'equipeTableau', {});
+    const d = t.dossiers.find((x) => x.etalId === etalId);
+    assert.equal(d.numeroMarin, 'AB123456'); assert.equal(d.immatriculation, 'MQ 999999');
+    await assert.rejects(appeler('equipe', 'equipeDossier', { etalId, decision: 'refuser' }), /motif/);
+    await appeler('equipe', 'equipeDossier', { etalId, decision: 'refuser', motif: 'Numéro de marin introuvable' });
+    let e = await lire('etals/' + etalId);
+    assert.equal(e.statut, 'refuse'); assert.equal(e.motifStatut, 'Numéro de marin introuvable');
+    await appeler('pecheur', 'choisirRole', { role: 'pecheur', prenom: 'Jean-Marc', pecheur: { port: 'Le Robert', bateau: 'Ti Moun', immatriculation: 'MQ 999999', numeroMarin: 'AB123457' } });
+    assert.equal((await lire('etals/' + etalId)).statut, 'en_attente', 'dossier corrigé : à revoir');
+    await appeler('equipe', 'equipeDossier', { etalId, decision: 'verifier' });
+    e = await lire('etals/' + etalId);
+    assert.equal(e.statut, 'verifie'); assert.equal(e.motifStatut, null);
+    const dossier = await lire('etals/' + etalId + '/verification/dossier');
+    assert.equal(dossier.numeroVerifie, true); assert.equal(dossier.verifiePar, 'equipe@test.peche-connect.fr');
+  });
+  test('signalements : classer, ou suspendre le compte signalé', async () => {
+    const t = await appeler('equipe', 'equipeTableau', {});
+    assert.ok(t.signalements.length >= 1);
+    const s = t.signalements[0];
+    assert.equal(s.contre.role, 'pêcheur');
+    await appeler('equipe', 'equipeSignalement', { id: s.id, decision: 'classer' });
+    await assert.rejects(appeler('equipe', 'equipeSignalement', { id: s.id, decision: 'classer' }), /Déjà traité/);
+    assert.equal((await lire('etals/' + etalId)).statut, 'verifie', 'classé : rien ne change');
+    const r = await db.collection('signalements').add({ conv: 'x_y', par: comptes.client.uid, contre: comptes.robot.uid, motif: 'Insultes', bloquer: true, le: Timestamp.now(), traite: false });
+    await appeler('equipe', 'equipeSignalement', { id: r.id, decision: 'suspendre' });
+    assert.equal((await getAuth().getUser(comptes.robot.uid)).disabled, true, 'client bloqué');
+  });
+  test('facture archivée téléchargeable par l’équipe', async () => {
+    const t = await appeler('equipe', 'equipeTableau', {});
+    assert.ok(t.factures.length >= 1);
+    const f = await appeler('equipe', 'equipeFacture', { numero: t.factures[0].numero });
+    assert.equal(Buffer.from(f.pdf, 'base64').subarray(0, 4).toString(), '%PDF');
+  });
+});
+
 describe('Mon compte (RGPD)', () => {
   test('télécharger mes données', async () => {
     const d = await appeler('client', 'compte', { action: 'exporter' });
-    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 1); assert.ok(d.conversations[0].messages.length >= 2);
+    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 2); assert.ok(d.conversations[0].messages.length >= 2); // thon au kilo + commande « formats »
   });
   test('supprimer mon compte : bons gardés mais anonymisés, messages effacés', async () => {
     await appeler('client', 'compte', { action: 'supprimer' });

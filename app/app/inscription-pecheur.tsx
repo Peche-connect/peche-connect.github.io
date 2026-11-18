@@ -19,10 +19,12 @@ export default function InscriptionPecheur() {
   const [bateau, setBateau] = useState('');
   const [immat, setImmat] = useState('');
   const [numero, setNumero] = useState('');
+  const [corriger, setCorriger] = useState(false);
   const complet = prenom.trim() && bateau.trim() && immat.trim().length >= 5 && numero.replace(/[^A-Za-z0-9]/g, '').length >= 4;
 
-  if (session?.role === 'pecheur') {
+  if (session?.role === 'pecheur' && !(corriger && session.statutPecheur === 'refuse')) {
     const verifie = session.statutPecheur === 'verifie';
+    const bloque = session.statutPecheur === 'refuse' || session.statutPecheur === 'suspendu';
     return (
       <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
         <ScrollView contentContainerStyle={{ padding: 24, gap: 18 }}>
@@ -30,6 +32,13 @@ export default function InscriptionPecheur() {
           <T tresGras style={{ fontSize: 24 }}>Bonjou {session.prenom}</T>
           <Etape num="1" titre="Dossier envoyé" texte="Vos informations de pêcheur professionnel sont enregistrées." fait />
           <Etape num="2" titre="Vérification" texte={verifie ? 'Votre statut de pêcheur professionnel est vérifié.' : 'Nous vérifions votre immatriculation et votre statut (sous 48 h). Vous serez prévenu dans l’appli.'} fait={verifie} />
+          {bloque ? (
+            <View style={{ backgroundColor: '#fde7dc', borderRadius: 12, padding: 12, gap: 4 }}>
+              <T tresGras style={{ color: c.alerte }}>{session.statutPecheur === 'refuse' ? 'Dossier refusé' : 'Compte suspendu'}</T>
+              <T>{session.motifStatut || 'Contactez l’équipe Pêche Connect.'}</T>
+            </View>
+          ) : null}
+          {session.statutPecheur === 'refuse' ? <Bouton titre="Corriger mon dossier" onPress={() => setCorriger(true)} /> : null}
           <Etape num="3" titre="Compte de paiement" texte={session.stripePret ? 'Votre compte est prêt : l’argent des ventes vous est versé automatiquement.' : 'Pièce d’identité, RIB et SIRET, pour recevoir l’argent de vos ventes. Nous pouvons vous aider à le remplir.'} fait={!!session.stripePret} />
           {MODE_DEMO && !verifie ? <Bouton clair titre="Démo : simuler la vérification" onPress={app.simulerVerification} /> : null}
           {verifie && !session.stripePret ? <Bouton titre="Ouvrir mon compte de paiement" onPress={app.ouvrirComptePaiement} /> : null}

@@ -150,7 +150,7 @@ export async function chargerSession(): Promise<{ session: Session; profilIncomp
   if (p.role === 'pecheur') {
     const c = await droits(true);
     const e = c?.etalId ? (await essai(() => getDoc(doc(db(), 'etals', c.etalId!)))).data() : undefined;
-    return { uid: u.uid, profilIncomplet: false, session: { ...base, role: 'pecheur', etalId: c?.etalId, statutPecheur: e?.statut === 'verifie' ? 'verifie' : 'en_attente', stripePret: !!e?.stripePret } };
+    return { uid: u.uid, profilIncomplet: false, session: { ...base, role: 'pecheur', etalId: c?.etalId, statutPecheur: ['verifie', 'refuse', 'suspendu'].includes(e?.statut) ? e!.statut : 'en_attente', motifStatut: e?.motifStatut ?? undefined, stripePret: !!e?.stripePret } };
   }
   if (p.role === 'pro') {
     const pro = (await essai(() => getDoc(doc(db(), 'pros', u.uid)))).data() as (InfosPro & { adresse: string | null }) | undefined;
@@ -389,3 +389,13 @@ export async function enregistrerNotifications() {
     await fonction('enregistrerJeton', { jeton });
   } catch { /* notifications facultatives */ }
 }
+
+// ───────── Espace équipe (administration) ─────────
+export type Dossier = { etalId: string; prenom: string; port: string; bateau: string; stripePret: boolean; creeLe: string | null; immatriculation: string; nomLegal: string | null; numeroMarin: string; motifRefus: string | null };
+export type SignalementEquipe = { id: string; conv: string; bonCode: string | null; motif: string; bloquer: boolean; le: string | null; par: { prenom: string; role: string }; contre: { prenom: string; role: string } };
+export type FactureEquipe = { numero: string; bon: string; emiseLe: string; acheteur: string; vendeur: string; totalTtc: number };
+export const equipeAcces = async () => (await fonction<{ equipe: boolean }>('equipeAcces', {})).equipe;
+export const equipeTableau = () => fonction<{ dossiers: Dossier[]; signalements: SignalementEquipe[]; factures: FactureEquipe[] }>('equipeTableau', {});
+export const equipeDossier = (etalId: string, decision: 'verifier' | 'refuser' | 'suspendre', motif = '') => fonction<{ statut: string }>('equipeDossier', { etalId, decision, motif });
+export const equipeSignalement = (id: string, decision: 'classer' | 'suspendre') => fonction<{ ok: boolean }>('equipeSignalement', { id, decision });
+export const equipeFacture = (numero: string) => fonction<{ nom: string; pdf: string }>('equipeFacture', { numero });

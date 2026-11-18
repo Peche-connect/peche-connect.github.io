@@ -6,4 +6,5 @@ export { stripeWebhook } from './stripeWebhook';
 export { envoyerMessage, messageCree, signaler } from './messages';
 export { jetonAppel } from './appels';
 export { taches } from './taches';
+export { equipeAcces, equipeTableau, equipeDossier, equipeSignalement, equipeFacture } from './equipe';
 export { coupeCircuit } from './coupeCircuit';

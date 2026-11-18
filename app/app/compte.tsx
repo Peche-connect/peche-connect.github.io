@@ -1,11 +1,12 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, Share, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LiensLegaux } from '../src/components/LiensLegaux';
 import { Bouton, Chip, EnTete, Feuille, Ligne, T } from '../src/components/ui';
 import { ESPECES } from '../src/data/demo';
 import { detailTva, euro } from '../src/format';
+import * as B from '../src/services/backend';
 import { MODE_DEMO, useApp } from '../src/store';
 import { couleurs as c } from '../src/theme';
 
@@ -15,6 +16,9 @@ export default function Compte() {
   const [confirmer, setConfirmer] = useState(false);
   const [info, setInfo] = useState('');
   const [occupe, setOccupe] = useState(false);
+  // lien « Espace équipe » : en démo pour tous, sinon seulement pour les adresses de l'équipe
+  const [equipe, setEquipe] = useState(MODE_DEMO);
+  useEffect(() => { if (!MODE_DEMO && s) B.equipeAcces().then(setEquipe).catch(() => setEquipe(false)); }, [s?.email]);
   const identifiant = s?.email ? s.email : s?.telephone ? 'numéro terminant par ' + s.telephone.slice(-2) : 'compte connecté';
 
   // Droit d'accès / portabilité : fichier JSON de toutes mes données
@@ -58,6 +62,12 @@ export default function Compte() {
           </View>
         ) : null}
 
+        {equipe ? (
+          <Pressable onPress={() => router.push('/equipe')} accessibilityRole="button" style={{ borderWidth: 1, borderColor: c.ligne, borderRadius: 14, padding: 14 }}>
+            <T tresGras>Espace équipe{MODE_DEMO ? ' (démo)' : ''}</T>
+            <T gris petit>Vérifier les pêcheurs, traiter les signalements, retrouver les factures.</T>
+          </Pressable>
+        ) : null}
         <Bouton titre="Me déconnecter" onPress={async () => { await app.deconnecter(); router.replace('/connexion'); }} />
         {MODE_DEMO ? <Bouton clair titre="Recommencer la démo (tout effacer)" onPress={() => { app.reinitialiser(); router.replace('/connexion'); }} /> : null}
 

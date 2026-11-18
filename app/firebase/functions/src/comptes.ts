@@ -68,7 +68,9 @@ export const choisirRole = onCall(APPEL, async (req) => {
       }
       const change = e.port !== port || e.bateau !== bateau || prive?.immatriculation !== immatriculation || dossier?.numeroMarin !== numeroMarin;
       // un pêcheur vérifié qui change de bateau, d'immatriculation, de port ou de numéro de marin repasse en vérification
-      t.update(etalRef, { prenom, port, bateau, ...(change && e.statut === 'verifie' ? { statut: 'en_attente' } : {}) });
+      // un dossier refusé puis corrigé repart en vérification (un compte suspendu, non : décision de l'équipe)
+      const repasse = (change && e.statut === 'verifie') || e.statut === 'refuse';
+      t.update(etalRef, { prenom, port, bateau, ...(repasse ? { statut: 'en_attente', motifStatut: null } : {}) });
       t.set(etalRef.collection('prive').doc('infos'), { immatriculation }, { merge: true });
       if (dossier?.numeroMarin !== numeroMarin) t.set(dossierRef, { numeroMarin, numeroVerifie: false, soumisLe: FieldValue.serverTimestamp() });
       return change && e.statut === 'verifie';
