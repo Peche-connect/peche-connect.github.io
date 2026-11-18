@@ -8,6 +8,7 @@ import { cleLigne, libelleLigne, montantPaye } from '../../src/formats';
 import type { LignePanier } from '../../src/types';
 // valeur saisie à la pesée : le poids réel, ou le nombre de lots remis (prix fixe)
 const depart = (l: LignePanier) => (l.format === 'lot' ? l.nombre ?? 1 : l.kg);
+import { REGLES_ANNULATION } from '../../src/annulation';
 import { useApp } from '../../src/store';
 import { couleurs as c, polices as f } from '../../src/theme';
 
@@ -77,6 +78,15 @@ export default function Pesee() {
         <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: c.ligne }}>
           <Bouton titre={envoi ? 'Encaissement…' : poids.every((p) => p === 0) ? 'Annuler : rien à remettre' : 'Valider la pesée · ' + euro(montant)} desactive={trop || envoi || (!poids.every((p) => p === 0) && !qr?.ok)}
             onPress={async () => { setEnvoi(true); const ok = await app.validerPesee(b.code, poids, preuve ?? ''); setEnvoi(false); if (ok) router.canGoBack() ? router.back() : router.replace('/(pecheur)/reservations'); }} />
+          {b.statut === 'reserve' ? (
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+              <Bouton clair titre="Plus de poisson" style={{ flex: 1, height: 46 }} desactive={envoi}
+                onPress={async () => { if (await app.annulerParPecheur(b.code)) router.replace('/(pecheur)/reservations'); }} />
+              <Bouton clair titre="Client absent" style={{ flex: 1, height: 46 }} desactive={envoi}
+                onPress={async () => { if (await app.clientAbsent(b.code)) router.replace('/(pecheur)/reservations'); }} />
+            </View>
+          ) : null}
+          {b.statut === 'reserve' ? <T gris petit style={{ marginTop: 6 }}>« Plus de poisson » : rien n’est débité au client. « Client absent » : possible {REGLES_ANNULATION.absentApresMin} min après l’heure limite, {Math.round(REGLES_ANNULATION.penaliteAbsencePct * 100)} % du poisson débité pour vous dédommager (règles provisoires).</T> : null}
         </View>
       )}
     </SafeAreaView>

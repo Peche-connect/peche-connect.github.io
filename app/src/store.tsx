@@ -1,10 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Platform } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { AVIS_DEMO, ETALS_DEMO, PORTS, sortiesDemo } from './data/demo';
 const VERSION_DEMO = 4; // à augmenter quand les données de démo changent de forme
 import { distanceKm, FRAIS_LIVRAISON, heure, kg, LIVRAISON_MIN_KG } from './format';
-import { cleLigne, disponible, libelleLigne, montantBloque, montantPaye, nomBarquette, nomLot, normaliserProduit, stockKg } from './formats';
+import { REGLES_ANNULATION } from './annulation';
+import { compterEssai, lireFile, mettreEnFile, nouvelId, perime, retirerDeFile } from './fileAttente';
+import { cleLigne, disponible, libelleLigne, montantBloque, montantPaye, nomBarquette, nomLot, normaliserProduit, sousTotal, stockKg } from './formats';
 import { versDataUrl, type Enregistrement } from './audio';
 import * as B from './services/backend';
 import type { Avis, Bon, Conversation, EspeceSortie, Precommande, Sortie, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Produit, Role, Session } from './types';
@@ -39,6 +41,19 @@ type Etat = {
   precommandes: Precommande[];     // mes réservations avant sortie (client) ou celles de mes clients (pêcheur)
   erreur: string | null;
 };
+
+// démo : remet en vente le poisson d'un bon annulé
+function remettre(x: Etat, b: Bon) {
+  const et = x.etals.find((t) => t.id === b.etalId); if (!et) return;
+  for (const l of b.lignes) {
+    const p = et.produits.find((q) => q.id === l.produitId); if (!p) continue;
+    if (p.format === 'piece' && l.pieceId) p.pieces = [...(p.pieces ?? []), { id: l.pieceId, poidsKg: l.kg }];
+    else if (p.format === 'portion' && p.portion) p.portion.nombre += l.nombre ?? 0;
+    else if (p.format === 'lot' && p.lot) p.lot.nombre += l.nombre ?? 0;
+    else p.dispoKg = Math.round((p.dispoKg + l.kg) * 10) / 10;
+    if (p.format !== 'kilo') p.dispoKg = Math.round(stockKg(p) * 10) / 10;
+  }
+}
 
 const etatInitial = (): Etat => ({
   session: null,
@@ -131,6 +146,37 @@ function useMagasin() {
   };
 
   // ───────── Mode réel : chargement depuis le serveur ─────────
+  // ───────── Réseau faible : arrivages gardés sur le téléphone, renvoyés dès que possible ─────────
+  const [enAttente, setEnAttente] = useState(0);
+  const envoiEnCours = useRef(false);
+  const envoyerFile = async () => {
+    if (MODE_DEMO || envoiEnCours.current) return;
+    envoiEnCours.current = true;
+    try {
+      for (const x of await lireFile()) {
+        if (perime(x)) { await retirerDeFile(x.id); continue; }
+        try {
+          const url = x.photo ? await B.envoyerPhoto(x.etalId, x.photo.uri, x.photo.type).catch(() => undefined) : undefined; // photo perdue : l'arrivage part quand même
+          await B.publierArrivage(x.etalId, x.lignes, url, x.id);
+          await retirerDeFile(x.id); await recharger();
+        } catch (err) {
+          if ((err as B.ErreurServeur).reseau) { await compterEssai(x.id); break; } // toujours pas de réseau : on réessaiera
+          await retirerDeFile(x.id); erreur(err); // refus du serveur (espèce fermée…) : on prévient
+        }
+      }
+    } finally { envoiEnCours.current = false; setEnAttente((await lireFile()).length); }
+  };
+  useEffect(() => {
+    if (MODE_DEMO) return;
+    lireFile().then((l) => setEnAttente(l.length));
+    envoyerFile();
+    const t = setInterval(envoyerFile, 20_000);
+    const enLigne = () => envoyerFile();
+    if (typeof window !== 'undefined' && window.addEventListener) window.addEventListener('online', enLigne);
+    const sub = AppState.addEventListener('change', (st) => { if (st === 'active') envoyerFile(); });
+    return () => { clearInterval(t); sub.remove(); if (typeof window !== 'undefined' && window.removeEventListener) window.removeEventListener('online', enLigne); };
+  }, []);
+
   const recharger = async (): Promise<{ session: Session; profilIncomplet: boolean } | null> => {
     if (MODE_DEMO) return null;
     try {
@@ -372,6 +418,26 @@ function useMagasin() {
       if (MODE_DEMO) return { lien: SITE + '/pesee/' + code + '?s=demo', pin: '482615' };
       try { const r = await B.monQr(code); return r.signature ? { lien: SITE + '/pesee/' + code + '?s=' + r.signature, pin: r.codeRetrait ?? '' } : { lien: '', pin: '' }; } catch { return { lien: '', pin: '' }; }
     },
+    // ───── Annulations (règles provisoires, src/annulation.ts) ─────
+    async annulerParClient(code: string): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.annulerParClient(code); await recharger(); return true; } catch (err) { erreur(err); return false; } }
+      const b = ref.current.bons.find((y) => y.code === code); const et = b && ref.current.etals.find((t) => t.id === b.etalId);
+      if (b && et && ref.current.horloge > et.limiteRetrait - REGLES_ANNULATION.annulationClientAvantMin) { erreur(new Error('Trop tard pour annuler en ligne : prévenez le pêcheur par message.')); return false; }
+      maj((x) => { const y = x.bons.find((z) => z.code === code); if (y) { y.statut = 'annule'; remettre(x, y); } return x; });
+      return true;
+    },
+    async annulerParPecheur(code: string): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.annulerParPecheur(code); await recharger(); return true; } catch (err) { erreur(err); return false; } }
+      maj((x) => { const y = x.bons.find((z) => z.code === code); if (y) { y.statut = 'annule'; y.montantPaye = 0; } return x; });
+      return true;
+    },
+    async clientAbsent(code: string): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.clientAbsent(code); await recharger(); return true; } catch (err) { erreur(err); return false; } }
+      const b = ref.current.bons.find((y) => y.code === code); const et = b && ref.current.etals.find((t) => t.id === b.etalId);
+      if (b && et && ref.current.horloge < et.limiteRetrait + REGLES_ANNULATION.absentApresMin) { erreur(new Error('Attendez ' + REGLES_ANNULATION.absentApresMin + ' min après l’heure limite de retrait (démo : il est ' + heure(ref.current.horloge) + ').')); return false; }
+      maj((x) => { const y = x.bons.find((z) => z.code === code); if (y) { y.statut = 'annule'; y.montantPaye = Math.round(sousTotal(y.lignes) * REGLES_ANNULATION.penaliteAbsencePct * 100) / 100; remettre(x, y); } return x; });
+      return true;
+    },
     // ───── Réservations avant la sortie ─────
     // Pêcheur : « je sors, retour prévu à telle heure, je pense ramener… »
     async annoncerSortie(retour: string, especes: EspeceSortie[]): Promise<boolean> {
@@ -554,12 +620,17 @@ function useMagasin() {
     },
 
     // ───────── Espace pêcheur ─────────
-    async publierArrivage(etalId: string, lignes: Omit<Produit, 'id'>[], photo?: { uri: string; type?: string }): Promise<boolean> {
+    // renvoie 'en_attente' quand le réseau manque : l'arrivage partira tout seul plus tard
+    async publierArrivage(etalId: string, lignes: Omit<Produit, 'id'>[], photo?: { uri: string; type?: string }): Promise<boolean | 'en_attente'> {
       if (!MODE_DEMO) {
+        const id = nouvelId();
         try {
           const url = photo ? await B.envoyerPhoto(etalId, photo.uri, photo.type) : undefined;
-          await B.publierArrivage(etalId, lignes, url); await recharger(); return true;
-        } catch (err) { erreur(err); return false; }
+          await B.publierArrivage(etalId, lignes, url, id); await recharger(); return true;
+        } catch (err) {
+          if ((err as B.ErreurServeur).reseau) { await mettreEnFile({ id, type: 'arrivage', etalId, lignes, photo }); setEnAttente((await lireFile()).length); return 'en_attente'; }
+          erreur(err); return false;
+        }
       }
       maj((x) => {
         const et = x.etals.find((t) => t.id === etalId)!;
@@ -620,7 +691,7 @@ function useMagasin() {
     resume: (lignes: LignePanier[]) => lignes.map(libelleLigne).join(', '),
   }), [e]);
 
-  return { e, pret, ...actions, ...sel };
+  return { e, pret, enAttente, envoyerFile, ...actions, ...sel };
 }
 
 type Magasin = ReturnType<typeof useMagasin>;

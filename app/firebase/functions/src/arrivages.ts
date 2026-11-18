@@ -12,7 +12,9 @@ import { especeConnue, fermetureActive, FERMETURES_CONNUES, type Fermeture } fro
 export const publierArrivage = onCall(APPEL, async (req) => {
   const uid = connecte(req);
   await limiter(uid, 'arrivage', 30);
-  const d = (req.data ?? {}) as { lignes: Record<string, unknown>[]; photoChemin?: string; limiteRetrait?: number };
+  const d = (req.data ?? {}) as { lignes: Record<string, unknown>[]; photoChemin?: string; limiteRetrait?: number; idEnvoi?: string };
+  // réseau faible : l'appli renvoie le même arrivage avec le même identifiant ; appliqué une seule fois
+  const idEnvoi = typeof d.idEnvoi === 'string' && /^[a-z0-9]{6,24}$/.test(d.idEnvoi) ? d.idEnvoi : null;
   if (!Array.isArray(d.lignes) || d.lignes.length > 30) throw erreur('invalid-argument', 'Arrivage invalide.');
   const etalRef = db.doc('etals/' + uid);
   const fermetures: Fermeture[] = [...FERMETURES_CONNUES, ...(await db.collection('fermetures').get()).docs.map((x) => x.data() as Fermeture)];
@@ -23,10 +25,11 @@ export const publierArrivage = onCall(APPEL, async (req) => {
   }
 
   // dans une transaction : une réservation simultanée ne peut pas être perdue (pas de survente)
-  const { e, produits } = await db.runTransaction(async (t) => {
+  const { e, produits, deja } = await db.runTransaction(async (t) => {
     const e = (await t.get(etalRef)).data();
     if (!e || e.pecheurId !== uid) throw erreur('permission-denied', 'Réservé aux pêcheurs.');
     if (e.statut !== 'verifie' || !e.stripePret) throw erreur('failed-precondition', 'Compte pêcheur pas encore vérifié.');
+    if (idEnvoi && e.dernierEnvoi === idEnvoi) return { e, produits: (e.produits ?? []) as Produit[], deja: true }; // déjà reçu : rien à refaire
     // même identifiant pour la même espèce vendue de la même façon (paniers en cours)
     const anciens = new Map((e.produits as Produit[] ?? []).map((p) => [cleProduit(p), p.id]));
     const vus = new Set<string>();
@@ -43,12 +46,13 @@ export const publierArrivage = onCall(APPEL, async (req) => {
       vus.add(cle);
       produits.push({ ...p, id: anciens.get(cle) ?? uid.slice(0, 6) + '-' + Date.now().toString(36) + '-' + i });
     });
-    const maj: Record<string, unknown> = { produits, debarqueLe: FieldValue.serverTimestamp() };
+    const maj: Record<string, unknown> = { produits, debarqueLe: FieldValue.serverTimestamp(), ...(idEnvoi ? { dernierEnvoi: idEnvoi } : {}) };
     if (typeof d.limiteRetrait === 'number' && d.limiteRetrait >= 6 * 60 && d.limiteRetrait <= 20 * 60) maj.limiteRetrait = Math.round(d.limiteRetrait);
     if (photoUrl) maj.photoUrl = photoUrl;
     t.update(etalRef, maj as FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData>);
-    return { e, produits };
+    return { e, produits, deja: false };
   });
+  if (deja) return { produits: produits.length, doublon: true };
 
   // réservations faites avant la sortie : deviennent des bons à payer, dans l'ordre d'arrivée
   const sortie = await convertirPrecommandes(uid);

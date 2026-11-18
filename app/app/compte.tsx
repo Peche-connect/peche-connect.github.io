@@ -7,6 +7,7 @@ import { Bouton, Chip, EnTete, Feuille, Ligne, T } from '../src/components/ui';
 import { ESPECES } from '../src/data/demo';
 import { detailTva, euro } from '../src/format';
 import * as B from '../src/services/backend';
+import { changer as changerTaille, TAILLES, useEchelle } from '../src/taille';
 import { MODE_DEMO, useApp } from '../src/store';
 import { couleurs as c } from '../src/theme';
 
@@ -17,6 +18,7 @@ export default function Compte() {
   const [info, setInfo] = useState('');
   const [occupe, setOccupe] = useState(false);
   // lien « Espace équipe » : en démo pour tous, sinon seulement pour les adresses de l'équipe
+  const echelle = useEchelle();
   const [equipe, setEquipe] = useState(MODE_DEMO);
   useEffect(() => { if (!MODE_DEMO && s) B.equipeAcces().then(setEquipe).catch(() => setEquipe(false)); }, [s?.email]);
   const identifiant = s?.email ? s.email : s?.telephone ? 'numéro terminant par ' + s.telephone.slice(-2) : 'compte connecté';
@@ -62,6 +64,13 @@ export default function Compte() {
           </View>
         ) : null}
 
+        <View style={{ borderWidth: 1, borderColor: c.ligne, borderRadius: 14, padding: 14, gap: 8 }}>
+          <T tresGras>Taille du texte</T>
+          <T gris petit>Pour lire plus facilement sur le téléphone, au port comme à la maison.</T>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {TAILLES.map((t) => <Chip key={t.nom} titre={t.nom} actif={echelle === t.echelle} onPress={() => changerTaille(t.echelle)} />)}
+          </View>
+        </View>
         {equipe ? (
           <Pressable onPress={() => router.push('/equipe')} accessibilityRole="button" style={{ borderWidth: 1, borderColor: c.ligne, borderRadius: 14, padding: 14 }}>
             <T tresGras>Espace équipe{MODE_DEMO ? ' (démo)' : ''}</T>

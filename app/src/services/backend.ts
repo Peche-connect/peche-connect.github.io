@@ -62,7 +62,8 @@ function init() {
 const auth = () => (init(), _auth);
 const db = () => (init(), _db);
 
-export class ErreurServeur extends Error {}
+// reseau = la requête n'a pas pu partir ou arriver (réseau faible au port) : on peut la refaire plus tard
+export class ErreurServeur extends Error { reseau = false; }
 const MESSAGES: Record<string, string> = {
   'permission-denied': 'Action non autorisée.', unauthenticated: 'Session expirée, reconnectez-vous.', unavailable: 'Pas de connexion au serveur. Vérifiez votre réseau puis réessayez.',
   'auth/network-request-failed': 'Pas de connexion au serveur. Vérifiez votre réseau puis réessayez.', 'auth/invalid-action-code': 'Ce lien de connexion a expiré ou a déjà servi. Demandez-en un nouveau.',
@@ -73,7 +74,10 @@ function lisible(e: unknown): ErreurServeur {
   const code = String(x?.code ?? '').replace(/^functions\//, '');
   // les fonctions serveur renvoient déjà un message en français
   if (x?.code?.startsWith('functions/') && !['internal', 'unavailable', 'unauthenticated'].includes(code) && x.message) return new ErreurServeur(x.message);
-  return new ErreurServeur(MESSAGES[code] ?? MESSAGES[x?.code ?? ''] ?? 'Erreur du serveur, réessayez dans un instant.');
+  const r = new ErreurServeur(MESSAGES[code] ?? MESSAGES[x?.code ?? ''] ?? 'Erreur du serveur, réessayez dans un instant.');
+  r.reseau = ['unavailable', 'deadline-exceeded', 'internal', 'auth/network-request-failed', 'storage/retry-limit-exceeded', 'storage/unknown'].includes(code)
+    || (typeof navigator !== 'undefined' && navigator.onLine === false);
+  return r;
 }
 async function fonction<T>(nom: string, data: Record<string, unknown>): Promise<T> {
   init();
@@ -351,8 +355,9 @@ export async function envoyerPhoto(etalId: string, uri: string, type = 'image/jp
   await essai(() => uploadBytes(ref(_st, chemin), corps, { contentType: type }));
   return chemin;
 }
-export async function publierArrivage(_etalId: string, lignes: Omit<Produit, 'id'>[], photoChemin?: string) {
-  await fonction('publierArrivage', { lignes, ...(photoChemin ? { photoChemin } : {}) });
+// idEnvoi : le même arrivage renvoyé (réseau faible) n'est appliqué qu'une fois
+export async function publierArrivage(_etalId: string, lignes: Omit<Produit, 'id'>[], photoChemin?: string, idEnvoi?: string) {
+  await fonction('publierArrivage', { lignes, ...(photoChemin ? { photoChemin } : {}), ...(idEnvoi ? { idEnvoi } : {}) });
 }
 
 // Besoin d'un pro : créé par le serveur (coordonnées tirées de sa fiche, note masquée)
@@ -432,3 +437,8 @@ export const annoncerSortie = (retour: string, especes: { espece: string; prixKg
 export const precommander = (etalId: string, espece: string, kg: number) => fonction<{ id: string }>('precommander', { etalId, espece, kg });
 export const annulerPrecommande = (id: string) => fonction<{ ok: boolean }>('annulerPrecommande', { id });
 export const annulerSortie = (motif: string) => fonction<{ ok: boolean }>('annulerSortie', { motif });
+
+// ───────── Annulations ─────────
+export const annulerParClient = (code: string) => fonction<{ ok: boolean }>('annulerParClient', { code });
+export const annulerParPecheur = (code: string) => fonction<{ ok: boolean }>('annulerParPecheur', { code });
+export const clientAbsent = (code: string) => fonction<{ debite: number }>('clientAbsent', { code });

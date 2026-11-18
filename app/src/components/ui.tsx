@@ -2,14 +2,14 @@ import { router } from 'expo-router';
 import React from 'react';
 import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextStyle, View, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useEchelle } from '../taille';
 import { couleurs as c, polices as f, rayon } from '../theme';
 
 export function T({ style, gras, tresGras, gris, petit, children, ...p }: React.ComponentProps<typeof Text> & { gras?: boolean; tresGras?: boolean; gris?: boolean; petit?: boolean }) {
-  return (
-    <Text {...p} style={[{ fontFamily: tresGras ? f.tresGras : gras ? f.gras : f.normal, color: gris ? c.gris : c.texte, fontSize: petit ? 13 : 15 }, style]}>
-      {children}
-    </Text>
-  );
+  const k = useEchelle(); // affichage plus gros (Mon compte)
+  const plat = StyleSheet.flatten([{ fontFamily: tresGras ? f.tresGras : gras ? f.gras : f.normal, color: gris ? c.gris : c.texte, fontSize: petit ? 13 : 15 }, style]) as TextStyle;
+  const agrandi = k === 1 ? plat : { ...plat, fontSize: (plat.fontSize ?? 15) * k, ...(plat.lineHeight ? { lineHeight: plat.lineHeight * k } : {}) };
+  return <Text {...p} style={agrandi}>{children}</Text>;
 }
 
 // En-tête de l'appli : « PÊCHE / CONNECT » en entier, trait vertical à droite (choix du porteur)
@@ -124,7 +124,7 @@ export function Ligne({ style }: { style?: ViewStyle }) {
 }
 
 export const s = StyleSheet.create({
-  bouton: { height: 54, borderRadius: 13, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, flexDirection: 'row', gap: 10 },
+  bouton: { minHeight: 54, paddingVertical: 8, borderRadius: 13, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 18, flexDirection: 'row', gap: 10 },
   chip: { minHeight: 38, paddingHorizontal: 14, borderRadius: rayon.pilule, backgroundColor: c.doux, alignItems: 'center', justifyContent: 'center' },
   prix: { backgroundColor: c.accent, color: c.surAccent, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2, overflow: 'hidden', alignSelf: 'flex-start' },
   pastille: { backgroundColor: c.accent, borderRadius: rayon.pilule, paddingHorizontal: 9, paddingVertical: 4, alignSelf: 'flex-start' },

@@ -1,16 +1,17 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Image, ScrollView, View } from 'react-native';
+import { Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcCarte } from '../../src/components/icones';
 import { Itineraire } from '../../src/components/Itineraire';
 import { QR } from '../../src/components/QR';
 import { Suivi } from '../../src/components/Suivi';
-import { Bouton, EnTete, Ligne, Pastille, T, Vide } from '../../src/components/ui';
+import { Bouton, EnTete, Feuille, Ligne, Pastille, T, Vide } from '../../src/components/ui';
 import { PORTS } from '../../src/data/demo';
 import { detailTva, euro, kg, TVA_PRODUITS_MER } from '../../src/format';
 import { cleLigne, libelleLigne, preparationLigne, quantiteLigne } from '../../src/formats';
 import { NoterAchat } from '../../src/components/Avis';
+import { texteRegles } from '../../src/annulation';
 import { MODE_DEMO, useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -18,6 +19,7 @@ export default function BonEcran() {
   const { code, paye } = useLocalSearchParams<{ code: string; paye?: string }>();
   const app = useApp();
   const [iti, setIti] = useState(false);
+  const [annuler, setAnnuler] = useState(false);
   const [qr, setQr] = useState({ lien: '', pin: '' });
   const b = app.e.bons.find((x) => x.code === code);
   const statut = b?.statut;
@@ -108,9 +110,17 @@ export default function BonEcran() {
           {b.livraison ? null : <Bouton titre="Itinéraire" style={{ flex: 1, height: 50 }} onPress={() => setIti(true)} />}
           <Bouton titre="Message" clair style={{ flex: 1, height: 50 }} onPress={() => router.push({ pathname: '/chat/[id]', params: { id: e.id + '|Vous' } })} />
         </View>
+        {b.statut === 'reserve' ? (
+          <Pressable onPress={() => setAnnuler(true)} accessibilityRole="button" style={{ marginHorizontal: 16, marginTop: 12 }}><T gris style={{ textDecorationLine: 'underline' }}>Annuler ma réservation</T></Pressable>
+        ) : null}
         <Suivi code={b.code} statut={b.statut} />
         <T gris style={{ margin: 16 }}>{e.pecheur} pèse votre poisson devant vous et valide le bon. Seul le poids réel est débité ; le reste est libéré tout de suite.</T>
       </ScrollView>
+      <Feuille visible={annuler} onFermer={() => setAnnuler(false)} titre="Annuler la réservation ?">
+        {texteRegles().map((t) => <T key={t} gris style={{ marginBottom: 6 }}>• {t}</T>)}
+        <Bouton titre="Oui, annuler (rien n’est débité)" style={{ marginTop: 8, backgroundColor: c.alerte }} onPress={async () => { const ok = await app.annulerParClient(b.code); setAnnuler(false); if (ok) router.replace('/(client)/bons'); }} />
+        <Bouton clair titre="Garder ma réservation" style={{ marginTop: 8 }} onPress={() => setAnnuler(false)} />
+      </Feuille>
       <Itineraire visible={iti} onFermer={() => setIti(false)} lieu={e.lieu ?? e.port} lat={p.lat} lon={p.lon} />
     </SafeAreaView>
   );

@@ -7,6 +7,7 @@ import { Bouton, Chip, Feuille, Logo, Rond, Stepper, T } from '../../src/compone
 import { ESPECES } from '../../src/data/demo';
 import { fermeture } from '../../src/data/fermetures';
 import { euro, heure, kg } from '../../src/format';
+import { changer as changerTaille, useEchelle } from '../../src/taille';
 import { NOMS_FORMATS, produitParDefaut, stockKg } from '../../src/formats';
 import type { Format, Produit, TypePortion } from '../../src/types';
 import { useApp } from '../../src/store';
@@ -30,6 +31,7 @@ function Reglage({ valeur, onMoins, onPlus, label }: { valeur: string; onMoins: 
 
 // Publier l'arrivage en moins d'une minute : prix et quantités d'hier pré-remplis
 export default function Arrivage() {
+  const echelle = useEchelle();
   const app = useApp();
   const s = app.e.session!;
   const e = app.etal(s.etalId)!;
@@ -65,6 +67,7 @@ export default function Arrivage() {
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}><Logo /><T gris>Bonjou {s.prenom}</T></View>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Chip titre={aPreparer + ' à préparer'} onPress={() => router.navigate('/(pecheur)/reservations')} style={{ backgroundColor: c.accent, minHeight: 34 }} />
+            <Rond label={echelle > 1 ? 'Texte normal' : 'Texte plus gros'} onPress={() => changerTaille(echelle > 1 ? 1 : 1.4)}><T tresGras style={{ fontSize: 15 / echelle }}>{echelle > 1 ? 'A−' : 'A+'}</T></Rond>
             <Rond label="Mon compte" onPress={() => router.push('/compte')}><IcCompte /></Rond>
           </View>
         </View>
@@ -172,10 +175,17 @@ export default function Arrivage() {
         </View>
         {doublon ? <T gras style={{ color: c.alerte }}>Une espèce apparaît deux fois avec le même format : retirez-en une.</T> : null}
         {publie ? <T gras style={{ color: c.vert, marginTop: 8 }}>Arrivage publié : les clients le voient tout de suite.</T> : null}
+        {app.enAttente ? (
+          <View style={{ backgroundColor: '#fde7dc', borderRadius: 12, padding: 12, gap: 6, marginTop: 8 }}>
+            <T tresGras>Pas de réseau : arrivage gardé sur le téléphone</T>
+            <T>Il partira tout seul dès que le réseau revient. Gardez l’appli ouverte, ou rouvrez-la plus tard : l’envoi reprend.</T>
+            <Pressable onPress={() => app.envoyerFile()} accessibilityRole="button"><T tresGras style={{ color: c.marine }}>Réessayer maintenant</T></Pressable>
+          </View>
+        ) : null}
       </ScrollView>
       <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: c.ligne }}>
         <Bouton titre="Mettre en vente" desactive={!enVente || doublon || envoi} droite={<T gras style={{ color: '#fff', opacity: 0.8 }}>{total ? kg(r1(total)) + ' · ' : ''}{enVente} produit{enVente > 1 ? 's' : ''}</T>}
-          onPress={async () => { setEnvoi(true); const ok = await app.publierArrivage(e.id, lignes.filter((l) => !vide(l)), photo ?? undefined); setEnvoi(false); if (ok) { setPublie(true); setPhoto(null); } }} />
+          onPress={async () => { setEnvoi(true); const ok = await app.publierArrivage(e.id, lignes.filter((l) => !vide(l)), photo ?? undefined); setEnvoi(false); if (ok === true) { setPublie(true); setPhoto(null); } }} />
       </View>
       <Feuille visible={ajout} onFermer={() => setAjout(false)} titre="Ajouter une espèce">
         {ESPECES.map((x) => {

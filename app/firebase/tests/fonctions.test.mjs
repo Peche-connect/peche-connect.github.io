@@ -341,6 +341,15 @@ describe('Formats de vente (kilo, pièce, barquettes, lot)', () => {
     const ps = (await lire('etals/' + etalId)).produits;
     assert.equal(ps[1].pieces[0].id, reste.id); assert.notEqual(ps[1].pieces[1].id, reste.id);
   });
+  test('réseau faible : le même arrivage renvoyé deux fois n’est appliqué qu’une fois', async () => {
+    const lignes = [{ espece: 'Thon jaune', prixKg: 14, dispoKg: 10, preparations: [{ nom: 'Entier', supplementKg: 0 }, { nom: 'En tranches', supplementKg: 2 }] }];
+    await appeler('pecheur', 'publierArrivage', { lignes, idEnvoi: 'envoi1abc' });
+    const produit = (await lire('etals/' + etalId)).produits[0];
+    await appeler('client', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 2, preparation: 'Entier' }], creneau: 'Avant 10 h' });
+    const r = await appeler('pecheur', 'publierArrivage', { lignes, idEnvoi: 'envoi1abc' });
+    assert.equal(r.doublon, true);
+    assert.equal((await lire('etals/' + etalId)).produits[0].dispoKg, 8, 'la réservation faite entre-temps est conservée');
+  });
 });
 
 describe('Réservations avant la sortie', () => {
@@ -551,7 +560,7 @@ describe('Espace équipe', () => {
 describe('Mon compte (RGPD)', () => {
   test('télécharger mes données', async () => {
     const d = await appeler('client', 'compte', { action: 'exporter' });
-    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 6); assert.ok(d.conversations[0].messages.length >= 2); // thon au kilo, « formats », bon de sortie, 3 bons « annulation »
+    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 7); assert.ok(d.conversations[0].messages.length >= 2); // thon au kilo, « formats », bon de sortie, 3 bons « annulation »
     assert.equal(d.reservations_avant_sortie.length, 2);
   });
   test('supprimer mon compte : bons gardés mais anonymisés, messages effacés', async () => {
