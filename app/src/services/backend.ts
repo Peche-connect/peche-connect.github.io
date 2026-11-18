@@ -18,7 +18,7 @@ import { Platform } from 'react-native';
 import { activerAppCheck } from './appcheck';
 import * as N from './natif';
 import { normaliserProduit } from '../formats';
-import type { Avis, Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Produit, Session } from '../types';
+import type { Avis, Bon, Conversation, Precommande, Sortie, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Produit, Session } from '../types';
 
 const CONFIG = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -191,7 +191,7 @@ export async function chargerEtals(avecAdresse: string[] = []): Promise<Etal[]> 
   return [...etals].map(([id, e]) => versEtal(id, e, prives.get(id)));
 }
 
-type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null; facture?: string | null; avis?: number | null };
+type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null; facture?: string | null; avis?: number | null; origine?: Bon['origine'] };
 export async function chargerBons(moi: string): Promise<Bon[]> {
   const c = await droits();
   const qs = [query(collection(db(), 'bons'), where('clientId', '==', moi))];
@@ -205,7 +205,7 @@ export async function chargerBons(moi: string): Promise<Bon[]> {
       lignes: b.lignes.map((l) => ({ ...l, produitId: l.produitId ?? 'commande' })), creneau: b.creneau, montantBloque: Number(b.montantBloque),
       montantPaye: b.montantPaye == null ? undefined : Number(b.montantPaye),
       statut: b.statut === 'retire' ? 'retire' : b.statut === 'en_attente_paiement' ? 'a_payer' : 'reserve',
-      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(), facture: b.facture ?? undefined, avis: b.avis ?? undefined,
+      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(), facture: b.facture ?? undefined, avis: b.avis ?? undefined, origine: b.origine,
     }));
 }
 
@@ -408,3 +408,27 @@ export async function chargerAvis(etalId: string): Promise<Avis[]> {
   const q = await getDocs(query(collection(db(), 'avis'), where('etalId', '==', etalId), orderBy('le', 'desc'), limit(5)));
   return q.docs.map((d) => { const a = d.data(); return { code: d.id, prenom: a.prenom, note: a.note, commentaire: a.commentaire ?? '', le: a.le?.toDate?.().toISOString() ?? '' }; });
 }
+
+// ───────── Réservations avant la sortie ─────────
+const iso = (x: unknown) => (x as Timestamp)?.toDate?.().toISOString() ?? '';
+export async function chargerSorties(): Promise<Sortie[]> {
+  const q = await getDocs(query(collection(db(), 'sorties'), where('statut', '==', 'annoncee')));
+  return q.docs.map((d) => { const s = d.data(); return { etalId: d.id, prenom: s.prenom, port: s.port, bateau: s.bateau ?? '', retour: iso(s.retour), especes: s.especes ?? [], reserveKg: s.reserveKg ?? {}, statut: s.statut }; })
+    .filter((s) => Date.parse(s.retour) > Date.now() - 6 * 3600_000);
+}
+export async function chargerPrecommandes(uid: string): Promise<Precommande[]> {
+  const [a, b] = await Promise.all([
+    getDocs(query(collection(db(), 'precommandes'), where('clientId', '==', uid))),
+    getDocs(query(collection(db(), 'precommandes'), where('etalId', '==', uid))),
+  ]);
+  const vu = new Map<string, Precommande>();
+  for (const d of [...a.docs, ...b.docs]) {
+    const p = d.data();
+    vu.set(d.id, { id: d.id, etalId: p.etalId, clientPrenom: p.clientPrenom, espece: p.espece, kg: p.kg, prixKg: p.prixKg, statut: p.statut, bonCode: p.bonCode ?? undefined, kgServi: p.kgServi, raison: p.raison, mienne: p.clientId === uid });
+  }
+  return [...vu.values()];
+}
+export const annoncerSortie = (retour: string, especes: { espece: string; prixKg: number; kgMax: number }[]) => fonction<{ ok: boolean }>('annoncerSortie', { retour, especes });
+export const precommander = (etalId: string, espece: string, kg: number) => fonction<{ id: string }>('precommander', { etalId, espece, kg });
+export const annulerPrecommande = (id: string) => fonction<{ ok: boolean }>('annulerPrecommande', { id });
+export const annulerSortie = (motif: string) => fonction<{ ok: boolean }>('annulerSortie', { motif });

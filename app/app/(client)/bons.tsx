@@ -2,18 +2,31 @@ import { router } from 'expo-router';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Pastille, T, Vide } from '../../src/components/ui';
-import { euro } from '../../src/format';
+import { euro, kg } from '../../src/format';
 import { useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
 export default function MesBons() {
   const app = useApp();
   const bons = app.mesBons();
+  const pre = app.mesPrecommandes().filter((p) => p.statut !== 'annulee').reverse();
+  const etat = (p: typeof pre[number]) => p.statut === 'en_attente' ? 'En attente du retour du pêcheur' : p.statut === 'convertie' ? 'Arrivé : ' + kg(p.kgServi ?? p.kg) + ' mis de côté, à payer' : 'Pas servi' + (p.raison ? ' (' + p.raison + ')' : '') + ' : rien débité';
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.fond }}>
       <T tresGras style={{ fontSize: 24, padding: 16 }}>Mes bons</T>
       <ScrollView>
-        {!bons.length ? <Vide titre="Aucun bon pour l’instant" texte="Quand vous réservez, votre bon de retrait apparaît ici avec son code." action="Voir les étals" onAction={() => router.navigate('/(client)')} /> : null}
+        {pre.length ? (
+          <View style={{ padding: 16, gap: 8, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
+            <T tresGras style={{ fontSize: 17 }}>Réservé avant la sortie</T>
+            {pre.map((p) => (
+              <Pressable key={p.id} onPress={() => (p.bonCode ? router.push({ pathname: '/bon/[code]', params: { code: p.bonCode } }) : router.push({ pathname: '/sortie/[id]', params: { id: p.etalId } }))} style={{ gap: 2, paddingVertical: 6 }}>
+                <T><T tresGras>{p.espece} · {kg(p.kg)}</T> · étal de {app.etal(p.etalId)?.pecheur ?? '…'}</T>
+                <T petit style={{ color: p.statut === 'convertie' ? c.alerte : c.gris }}>{etat(p)}</T>
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        {!bons.length && !pre.length ? <Vide titre="Aucun bon pour l’instant" texte="Quand vous réservez, votre bon de retrait apparaît ici avec son code." action="Voir les étals" onAction={() => router.navigate('/(client)')} /> : null}
         {bons.map((b) => {
           const e = app.etal(b.etalId);
           return (

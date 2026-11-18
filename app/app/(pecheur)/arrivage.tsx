@@ -157,6 +157,15 @@ export default function Arrivage() {
           </View>
         ))}
         <Pressable onPress={() => setAjout(true)} style={{ paddingVertical: 14 }}><T tresGras>+ Ajouter une espèce</T></Pressable>
+        {(() => {
+          const so = app.sortie(e.id); const n = app.precommandesEtal(e.id).filter((p) => p.statut === 'en_attente');
+          return (
+            <Pressable onPress={() => router.push('/annoncer-sortie')} accessibilityRole="button" style={{ borderWidth: 1, borderColor: so ? c.marine : c.ligne, borderRadius: 12, padding: 12, gap: 2 }}>
+              <T tresGras>{so ? 'Sortie annoncée · ' + n.length + ' réservation' + (n.length > 1 ? 's' : '') + ' ›' : 'Vous partez en mer ? Annoncez votre sortie ›'}</T>
+              <T gris petit>{so ? 'En publiant cet arrivage, les réservations deviennent des bons à payer, dans l’ordre d’arrivée.' : 'Les clients réservent avant votre retour.'}</T>
+            </Pressable>
+          );
+        })()}
         <View style={{ backgroundColor: c.doux, borderRadius: 12, padding: 12, gap: 4 }}>
           <T gris>Vos prix et quantités d’hier sont déjà remplis.</T>
           <T gris petit>Une même espèce peut être vendue de deux façons : par exemple des dorades entières à la pièce et des filets en barquettes.</T>

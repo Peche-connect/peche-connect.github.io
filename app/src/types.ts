@@ -76,7 +76,13 @@ export type Bon = {
   date?: string; // date de création (mode réel), pour le relevé mensuel
   facture?: string; // numéro de facture (pros), ex. FA-2026-000001
   avis?: number; // note donnée par le client après le retrait (1 à 5)
+  origine?: 'panier' | 'demande' | 'sortie'; // sortie = réservé avant le retour du pêcheur
 };
+
+// Sortie en mer annoncée par un pêcheur : les clients réservent avant son retour
+export type EspeceSortie = { espece: string; prixKg: number; kgMax: number };
+export type Sortie = { etalId: string; prenom: string; port: string; bateau: string; retour: string; especes: EspeceSortie[]; reserveKg: Record<string, number>; statut: 'annoncee' | 'rentree' | 'annulee' | 'expiree' };
+export type Precommande = { id: string; etalId: string; clientPrenom: string; espece: string; kg: number; prixKg: number; statut: 'en_attente' | 'convertie' | 'non_servie' | 'annulee'; bonCode?: string; kgServi?: number; raison?: string; mienne: boolean };
 
 // Avis public d'un client sur un étal (après un achat retiré)
 export type Avis = { code: string; prenom: string; note: number; commentaire: string; le: string };

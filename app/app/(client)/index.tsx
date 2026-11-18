@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { Image, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CarteEtal } from '../../src/components/CarteEtal';
+import { SortiesAnnoncees } from '../../src/components/Sorties';
 import { IcCompte, IcLoupe } from '../../src/components/icones';
 import { Chip, Feuille, Logo, Rond, T, Vide } from '../../src/components/ui';
 import { FILTRES, PORTS } from '../../src/data/demo';
@@ -60,6 +61,7 @@ export default function Accueil() {
           <Vide titre="Aucun étal ne correspond" texte="Essayez un autre poisson ou effacez la recherche." action="Tout afficher" onAction={() => { setFiltre('Tout'); setQ(''); }} />
         ) : (
           <>
+            {filtre === 'Tout' && !q ? <SortiesAnnoncees titre={st.h2} /> : null}
             {recents.length > 0 && filtre !== 'Moins d’1 h' ? (
               <View style={{ gap: 10 }}>
                 <T tresGras style={st.h2}>Arrivé il y a moins d’une heure</T>

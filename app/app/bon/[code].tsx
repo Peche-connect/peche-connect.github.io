@@ -36,6 +36,7 @@ export default function BonEcran() {
         <T tresGras style={{ fontSize: 20 }}>{paye ? 'Paiement en cours de confirmation…' : 'À régler pour confirmer'}</T>
         {b.lignes.map((l, i) => <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}><T style={{ flex: 1 }}>{libelleLigne(l)}</T><T tresGras>{quantiteLigne(l, false)}</T></View>)}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>Montant bloqué (max)</T><T tresGras>{euro(b.montantBloque)}</T></View>
+        {b.origine === 'sortie' ? <T gras>Réservé avant la sortie : le pêcheur est rentré, votre part est mise de côté. Payez dans l’heure pour la garder.</T> : null}
         <T gris>Comme pour une réservation, seul le poids réel est débité à la pesée.</T>
         {paye ? null : <Bouton titre={'Payer ' + euro(b.montantBloque) + ' max'} onPress={() => app.payerBon(b.code)} />}
         <T gris petit>La messagerie avec le pêcheur s’ouvre une fois la commande réglée.</T>

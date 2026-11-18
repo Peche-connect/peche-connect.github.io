@@ -1,4 +1,4 @@
-import type { Avis, Etal, Produit, TypePortion } from '../types';
+import type { Avis, Etal, Produit, Sortie, TypePortion } from '../types';
 
 // Ports couverts et coordonnées (pour la carte et les distances)
 // Ports et abris de pêche de Martinique, d'après la carte « Le réseau de la pêche martiniquaise »
@@ -101,4 +101,15 @@ export const AVIS_DEMO: Record<string, Avis[]> = {
     { code: 'R-3', prenom: 'Le Comptoir du Port', note: 4, commentaire: 'Bon poisson, un peu d’attente au retrait.', le: ilYa(6) },
   ],
   jo: [{ code: 'R-4', prenom: 'Claire', note: 5, commentaire: 'Lambi propre et bien nettoyé.', le: ilYa(2) }],
+};
+
+// Sorties annoncées (démo) : retour demain matin
+export const sortiesDemo = (): Sortie[] => {
+  const demain = (h: number) => { const d = new Date(); d.setDate(d.getDate() + 1); d.setHours(h, 0, 0, 0); return d.toISOString(); };
+  return [
+    { etalId: 'sp', prenom: 'Didier', port: 'Saint-Pierre', bateau: 'Yole Montagne Pelée · DCP', retour: demain(11), statut: 'annoncee', reserveKg: { 'Thon jaune': 12 },
+      especes: [{ espece: 'Thon jaune', prixKg: 13, kgMax: 30 }, { espece: 'Dorade coryphène', prixKg: 13, kgMax: 15 }] },
+    { etalId: 'bf', prenom: 'Christian', port: 'Belle-Fontaine', bateau: 'Yole Ti Pwason · DCP', retour: demain(10), statut: 'annoncee', reserveKg: {},
+      especes: [{ espece: 'Thazard', prixKg: 15, kgMax: 20 }, { espece: 'Balaou', prixKg: 9, kgMax: 10 }] },
+  ];
 };

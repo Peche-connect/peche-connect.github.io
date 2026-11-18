@@ -1,13 +1,13 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { AVIS_DEMO, ETALS_DEMO, PORTS } from './data/demo';
-const VERSION_DEMO = 3; // à augmenter quand les données de démo changent de forme
+import { AVIS_DEMO, ETALS_DEMO, PORTS, sortiesDemo } from './data/demo';
+const VERSION_DEMO = 4; // à augmenter quand les données de démo changent de forme
 import { distanceKm, FRAIS_LIVRAISON, heure, kg, LIVRAISON_MIN_KG } from './format';
 import { cleLigne, disponible, libelleLigne, montantBloque, montantPaye, nomBarquette, nomLot, normaliserProduit, stockKg } from './formats';
 import { versDataUrl, type Enregistrement } from './audio';
 import * as B from './services/backend';
-import type { Avis, Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Produit, Role, Session } from './types';
+import type { Avis, Bon, Conversation, EspeceSortie, Precommande, Sortie, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Produit, Role, Session } from './types';
 
 // Mode démo : tout est stocké sur le téléphone, aucun paiement réel.
 // Mode réel : dès que les clés Firebase EXPO_PUBLIC_FIREBASE_* sont renseignées (fichier .env, voir
@@ -35,6 +35,8 @@ type Etat = {
   demandes: Demande[];
   suivis: string[];                // espèces suivies (alertes d'arrivage)
   avis: Record<string, Avis[]>;    // démo : avis par étal (mode réel : lus à l'ouverture de l'étal)
+  sorties: Sortie[];               // sorties en mer annoncées (réservations avant le retour)
+  precommandes: Precommande[];     // mes réservations avant sortie (client) ou celles de mes clients (pêcheur)
   erreur: string | null;
 };
 
@@ -63,6 +65,8 @@ const etatInitial = (): Etat => ({
   ] : [],
   suivis: [],
   avis: MODE_DEMO ? JSON.parse(JSON.stringify(AVIS_DEMO)) : {},
+  sorties: MODE_DEMO ? sortiesDemo() : [],
+  precommandes: [],
   erreur: null,
 });
 
@@ -132,14 +136,15 @@ function useMagasin() {
     try {
       const s = await B.chargerSession();
       if (!s.session || !s.uid) {
-        const etals = await B.chargerEtals();
-        setE((x) => ({ ...x, session: null, uid: s.uid, profilIncomplet: s.profilIncomplet, etals, bons: [], convs: {}, demandes: [], horloge: B.maintenantMartinique() }));
+        const [etals, sorties] = await Promise.all([B.chargerEtals(), B.chargerSorties().catch(() => [])]);
+        setE((x) => ({ ...x, session: null, uid: s.uid, profilIncomplet: s.profilIncomplet, etals, sorties, precommandes: [], bons: [], convs: {}, demandes: [], horloge: B.maintenantMartinique() }));
         return s;
       }
-      const [bons, convs, demandes, suivis] = await Promise.all([B.chargerBons(s.uid), B.chargerConversations(s.uid), B.chargerDemandes(s.uid), B.especesSuivies()]);
+      const [bons, convs, demandes, suivis, sorties, precommandes] = await Promise.all([B.chargerBons(s.uid), B.chargerConversations(s.uid), B.chargerDemandes(s.uid), B.especesSuivies(),
+        B.chargerSorties().catch(() => []), B.chargerPrecommandes(s.uid).catch(() => [])]);
       // adresse exacte : seulement les étals où j'ai un bon payé
       const etals = await B.chargerEtals([...new Set(bons.filter((b) => b.client === 'Vous' && b.statut !== 'a_payer').map((b) => b.etalId))]);
-      setE((x) => ({ ...x, session: s.session, uid: s.uid, profilIncomplet: false, etals, bons, convs, demandes, suivis, horloge: B.maintenantMartinique() }));
+      setE((x) => ({ ...x, session: s.session, uid: s.uid, profilIncomplet: false, etals, bons, convs, demandes, suivis, sorties, precommandes, horloge: B.maintenantMartinique() }));
       return s;
     } catch (err) { erreur(err); return null; }
   };
@@ -151,7 +156,7 @@ function useMagasin() {
       try {
         const lu = JSON.parse(v);
         // démo : une sauvegarde d'une ancienne version (sans les formats de vente) est ignorée
-        if (MODE_DEMO && lu.v === VERSION_DEMO) setE({ ...etatInitial(), ...lu, demandes: lu.demandes ?? etatInitial().demandes, suivis: lu.suivis ?? [], avis: lu.avis ?? etatInitial().avis, erreur: null });
+        if (MODE_DEMO && lu.v === VERSION_DEMO) setE({ ...etatInitial(), ...lu, demandes: lu.demandes ?? etatInitial().demandes, suivis: lu.suivis ?? [], avis: lu.avis ?? etatInitial().avis, sorties: lu.sorties ?? etatInitial().sorties, precommandes: lu.precommandes ?? [], erreur: null });
         else setE((x) => ({ ...x, commune: lu.commune ?? x.commune, panier: lu.panier ?? null, creneau: lu.creneau ?? null }));
       } catch { /* données illisibles : on repart de zéro */ }
     }).finally(async () => {
@@ -367,6 +372,63 @@ function useMagasin() {
       if (MODE_DEMO) return { lien: SITE + '/pesee/' + code + '?s=demo', pin: '482615' };
       try { const r = await B.monQr(code); return r.signature ? { lien: SITE + '/pesee/' + code + '?s=' + r.signature, pin: r.codeRetrait ?? '' } : { lien: '', pin: '' }; } catch { return { lien: '', pin: '' }; }
     },
+    // ───── Réservations avant la sortie ─────
+    // Pêcheur : « je sors, retour prévu à telle heure, je pense ramener… »
+    async annoncerSortie(retour: string, especes: EspeceSortie[]): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.annoncerSortie(retour, especes); await recharger(); return true; } catch (err) { erreur(err); return false; } }
+      const et = ref.current.session?.etalId; if (!et) return false;
+      maj((x) => {
+        const t = x.etals.find((y) => y.id === et); const ancienne = x.sorties.find((y) => y.etalId === et && y.statut === 'annoncee');
+        x.sorties = [...x.sorties.filter((y) => y.etalId !== et), { etalId: et, prenom: t?.pecheur ?? '', port: t?.port ?? '', bateau: t?.bateau ?? '', retour, especes, reserveKg: ancienne?.reserveKg ?? {}, statut: 'annoncee' }];
+        return x;
+      });
+      return true;
+    },
+    async annulerSortie(motif: string) {
+      if (!MODE_DEMO) { try { await B.annulerSortie(motif); await recharger(); } catch (err) { erreur(err); } return; }
+      const et = ref.current.session?.etalId;
+      maj((x) => { x.sorties = x.sorties.filter((y) => y.etalId !== et); x.precommandes.forEach((p) => { if (p.etalId === et && p.statut === 'en_attente') { p.statut = 'non_servie'; p.raison = 'sortie annulée'; } }); return x; });
+    },
+    // Client : réserver des kilos avant le retour (sans payer)
+    async precommander(etalId: string, espece: string, kgVoulu: number): Promise<boolean> {
+      if (!MODE_DEMO) { try { await B.precommander(etalId, espece, kgVoulu); await recharger(); return true; } catch (err) { erreur(err); return false; } }
+      const x0 = ref.current; const s = x0.sorties.find((y) => y.etalId === etalId && y.statut === 'annoncee'); const sp = s?.especes.find((y) => y.espece === espece);
+      if (!s || !sp) return false;
+      if (x0.precommandes.some((p) => p.mienne && p.etalId === etalId && p.espece === espece && p.statut === 'en_attente')) { erreur(new Error('Vous avez déjà réservé cette espèce : annulez-la pour changer la quantité.')); return false; }
+      if ((s.reserveKg[espece] ?? 0) + kgVoulu > sp.kgMax) { erreur(new Error('Plus que ' + kg(Math.max(0, sp.kgMax - (s.reserveKg[espece] ?? 0))) + ' à réserver.')); return false; }
+      maj((x) => {
+        const so = x.sorties.find((y) => y.etalId === etalId)!; so.reserveKg[espece] = Math.round(((so.reserveKg[espece] ?? 0) + kgVoulu) * 10) / 10;
+        x.precommandes.push({ id: 'p' + Date.now(), etalId, clientPrenom: x.session?.prenom ?? 'Vous', espece, kg: kgVoulu, prixKg: sp.prixKg, statut: 'en_attente', mienne: true });
+        return x;
+      });
+      return true;
+    },
+    async annulerPrecommande(id: string) {
+      if (!MODE_DEMO) { try { await B.annulerPrecommande(id); await recharger(); } catch (err) { erreur(err); } return; }
+      maj((x) => {
+        const p = x.precommandes.find((y) => y.id === id); if (!p || p.statut !== 'en_attente') return x;
+        p.statut = 'annulee'; const so = x.sorties.find((y) => y.etalId === p.etalId); if (so) so.reserveKg[p.espece] = Math.max(0, (so.reserveKg[p.espece] ?? 0) - p.kg);
+        return x;
+      });
+    },
+    // Démo : simule le retour du pêcheur (en vrai : quand il publie son arrivage)
+    simulerRetour(etalId: string) {
+      maj((x) => {
+        const so = x.sorties.find((y) => y.etalId === etalId); const et = x.etals.find((t) => t.id === etalId); if (!so || !et) return x;
+        so.statut = 'rentree';
+        so.especes.forEach((sp, i) => { if (!et.produits.some((p) => p.espece === sp.espece && p.format === 'kilo')) et.produits.push({ id: etalId + '-s' + i, espece: sp.espece, format: 'kilo', prixKg: sp.prixKg, dispoKg: sp.kgMax, pasKg: 0.5, preparations: [{ nom: 'Entier', supplementKg: 0 }] }); });
+        et.debarque = x.horloge;
+        for (const p of x.precommandes.filter((y) => y.etalId === etalId && y.statut === 'en_attente')) {
+          const pr = et.produits.find((y) => y.espece === p.espece && y.format === 'kilo')!;
+          const servi = Math.min(p.kg, pr.dispoKg); pr.dispoKg = Math.round((pr.dispoKg - servi) * 10) / 10;
+          const code = 'R-' + x.prochainCode++;
+          const lignes: LignePanier[] = [{ produitId: pr.id, espece: p.espece, format: 'kilo', kg: servi, prixKg: pr.prixKg, preparation: 'Entier', supplementKg: 0 }];
+          x.bons.push({ code, etalId, client: p.mienne ? 'Vous' : p.clientPrenom, lignes, creneau: 'Avant ' + heure(et.limiteRetrait).replace(':00', ' h'), statut: 'a_payer', origine: 'sortie', montantBloque: montantBloque(lignes, 0), creeLe: x.horloge });
+          p.statut = 'convertie'; p.bonCode = code; p.kgServi = servi;
+        }
+        return x;
+      });
+    },
     // Avis après le retrait : une note par bon (1 à 5) et un commentaire facultatif
     async laisserAvis(code: string, note: number, commentaire: string): Promise<boolean> {
       if (!MODE_DEMO) { try { await B.laisserAvis(code, note, commentaire); await recharger(); return true; } catch (err) { erreur(err); return false; } }
@@ -503,6 +565,7 @@ function useMagasin() {
         const et = x.etals.find((t) => t.id === etalId)!;
         et.produits = lignes.map((l, i) => { const p = { ...l, id: etalId + '-' + i + '-' + Date.now() } as Produit; if (p.format !== 'kilo') p.dispoKg = Math.round(stockKg(p) * 10) / 10; return p; }).filter(disponible);
         if (photo) et.photo = photo.uri;
+        x.sorties = x.sorties.map((y) => (y.etalId === etalId && y.statut === 'annoncee' ? { ...y, statut: 'rentree' } : y));
         et.debarque = x.horloge; return x;
       });
       return true;
@@ -548,6 +611,10 @@ function useMagasin() {
     // un pro ne voit pas ses propres besoins ici ; en démo, le pêcheur voit aussi ceux publiés depuis ce téléphone
     demandesOuvertes: () => e.demandes.filter((d) => d.statut === 'ouverte' && !(e.session?.pro && d.auteur === 'Vous')),
     bonsPecheur: (etalId?: string) => e.bons.filter((b) => b.etalId === etalId && b.statut !== 'a_payer'),
+    sortie: (etalId?: string) => e.sorties.find((s) => s.etalId === etalId && s.statut === 'annoncee'),
+    sortiesOuvertes: () => e.sorties.filter((s) => s.statut === 'annoncee' && s.etalId !== e.session?.etalId),
+    mesPrecommandes: () => e.precommandes.filter((p) => p.mienne),
+    precommandesEtal: (etalId?: string) => e.precommandes.filter((p) => p.etalId === etalId && !p.mienne),
     nonLusClient: () => Object.values(e.convs).filter((c) => c.client === 'Vous' && !c.luClient).length,
     nonLusPecheur: (etalId?: string) => Object.values(e.convs).filter((c) => c.etalId === etalId && !c.luPecheur).length,
     resume: (lignes: LignePanier[]) => lignes.map(libelleLigne).join(', '),

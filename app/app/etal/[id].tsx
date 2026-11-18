@@ -44,6 +44,11 @@ export default function EtalEcran() {
             <Pastille texte={e.bateau} style={{ backgroundColor: c.doux }} />
           </View>
         </View>
+        {app.sortie(e.id) ? (
+          <Pressable onPress={() => router.push({ pathname: '/sortie/[id]', params: { id: e.id } })} accessibilityRole="button" style={{ marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 12, backgroundColor: c.doux }}>
+            <T><T tresGras>{e.pecheur} est en mer.</T> Réservez sa prochaine pêche avant son retour ›</T>
+          </Pressable>
+        ) : null}
         {autre ? (
           <View style={{ marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 12, backgroundColor: c.accentPale, gap: 8 }}>
             <T>Votre panier contient déjà l’étal de <T tresGras>{app.etal(app.e.panier!.etalId)?.pecheur}</T>. Un panier = un seul pêcheur.</T>
