@@ -394,6 +394,53 @@ describe('Réservations avant la sortie', () => {
   });
 });
 
+describe('Règles d’annulation (réglages provisoires)', () => {
+  const minutesMq = () => ((((Math.floor(Date.now() / 60_000) - 240) % 1440) + 1440) % 1440);
+  const limite = (decalage) => db.doc('etals/' + etalId).update({ limiteRetrait: minutesMq() + decalage });
+  const stock = async () => (await lire('etals/' + etalId)).produits[0].dispoKg;
+  let n = 0;
+  const bonPaye = async () => {
+    const produit = (await lire('etals/' + etalId)).produits[0];
+    const { code: c } = await appeler('client', 'creerReservation', { etalId, lignes: [{ produitId: produit.id, kg: 1, preparation: 'Entier' }], creneau: 'Avant 10 h' });
+    const b = await lire('bons/' + c); const sid = (await lire('bonsSecrets/' + c)).stripeSession;
+    await webhook({ type: 'checkout.session.completed', data: { object: { id: sid, object: 'checkout.session', status: 'complete', amount_total: Math.round(b.montantBloque * 100), payment_intent: 'pi_annul' + (n++), metadata: { code: c } } } });
+    assert.equal((await lire('bons/' + c)).statut, 'reserve');
+    return c;
+  };
+  test('le client annule à temps : rien débité, poisson remis en vente ; trop tard : refusé', async () => {
+    await limite(180);
+    const avant = await stock();
+    const c = await bonPaye();
+    await appeler('client', 'annulerParClient', { code: c });
+    assert.equal((await lire('bons/' + c)).statut, 'annule');
+    assert.equal(await stock(), avant);
+    await limite(30);
+    const c2 = await bonPaye();
+    await assert.rejects(appeler('client', 'annulerParClient', { code: c2 }), /Trop tard/);
+    await assert.rejects(appeler('autre', 'annulerParClient', { code: c2 }), /introuvable/);
+    // rupture du pêcheur : rien débité, poisson PAS remis en vente
+    const s2 = await stock();
+    await appeler('pecheur', 'annulerParPecheur', { code: c2 });
+    const b = await lire('bons/' + c2);
+    assert.equal(b.statut, 'annule'); assert.equal(b.montantPaye, 0);
+    assert.equal(await stock(), s2);
+    assert.equal((await lire('etals/' + etalId)).ruptures.length, 1);
+  });
+  test('client absent : déclarable après l’heure limite + 60 min, 30 % du poisson débité', async () => {
+    await limite(30);
+    const c = await bonPaye();
+    await assert.rejects(appeler('pecheur', 'clientAbsent', { code: c }), /Attendez 60 min/);
+    await limite(-120);
+    const avant = await stock();
+    const r = await appeler('pecheur', 'clientAbsent', { code: c });
+    assert.equal(r.debite, 4.2, '30 % de 1 kg × 14 €');
+    const b = await lire('bons/' + c);
+    assert.equal(b.statut, 'annule'); assert.equal(b.montantPaye, 4.2);
+    assert.equal(await stock(), Math.round((avant + 1) * 10) / 10, 'poisson remis en vente');
+    await db.doc('etals/' + etalId).update({ limiteRetrait: 720 });
+  });
+});
+
 describe('Tâches automatiques', () => {
   test('positions expirées effacées, paiements abandonnés remis en vente', async () => {
     const conv = etalId + '_' + comptes.client.uid;
@@ -504,7 +551,7 @@ describe('Espace équipe', () => {
 describe('Mon compte (RGPD)', () => {
   test('télécharger mes données', async () => {
     const d = await appeler('client', 'compte', { action: 'exporter' });
-    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 3); assert.ok(d.conversations[0].messages.length >= 2); // thon au kilo + commande « formats » + bon de sortie
+    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 6); assert.ok(d.conversations[0].messages.length >= 2); // thon au kilo, « formats », bon de sortie, 3 bons « annulation »
     assert.equal(d.reservations_avant_sortie.length, 2);
   });
   test('supprimer mon compte : bons gardés mais anonymisés, messages effacés', async () => {

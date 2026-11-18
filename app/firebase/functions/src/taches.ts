@@ -3,6 +3,7 @@
 import { onSchedule } from 'firebase-functions/v2/scheduler';
 import { db, FieldValue, REGION, Timestamp } from './commun';
 import { notifier } from './notifier';
+import { clotureAbsence } from './annulations';
 import { annulerBon } from './reservations';
 import { champsSiret, verifierSiret } from './sirene';
 import { archiverPdf, emettreFacture } from './factures';
@@ -33,6 +34,12 @@ export async function lancerTaches(maintenant = Date.now()) {
     const ps = await db.collection('precommandes').where('etalId', '==', s.id).where('statut', '==', 'en_attente').get();
     for (const p of ps.docs) await p.ref.update({ statut: 'non_servie', raison: 'pas de retour annoncé' });
     if (ps.size) await notifier([...new Set(ps.docs.map((p) => p.data().clientId as string))], 'Sortie sans arrivage', s.data().prenom + ' n’a pas publié d’arrivage : votre réservation est libérée. Rien ne vous a été débité.', { lien: '/bons' });
+  }
+  // 2 ter. bons payés jamais clôturés : annulés sans frais au bout de 6 jours (l'empreinte bancaire expire à 7)
+  const oublies = await db.collection('bons').where('statut', '==', 'reserve').where('payeLe', '<', Timestamp.fromMillis(maintenant - 6 * 86400_000)).limit(50).get();
+  for (const b of oublies.docs) {
+    await clotureAbsence(b.id, { uid: null, role: 'systeme' }, false).catch(() => null);
+    await notifier([b.data().clientId, b.data().pecheurId].filter(Boolean), 'Bon ' + b.id + ' annulé', 'Jamais clôturé par le pêcheur : rien n’a été débité.');
   }
   // 3. rappel de retrait, une seule fois, 1 h après le paiement
   const rappels = await db.collection('bons').where('statut', '==', 'reserve').where('rappelEnvoye', '==', false).where('payeLe', '<', Timestamp.fromMillis(maintenant - 3600_000)).limit(200).get();

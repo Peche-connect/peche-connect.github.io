@@ -52,8 +52,11 @@ export function connecte(req: CallableRequest): string {
   return req.auth.uid;
 }
 
-export type Reglages = { fraisService: number; commissionPct: number; margeEmpreinte: number; livraisonMinKg: number; fraisLivraison: number; tvaProduitsMer: number; delaiPositionMin: number };
-export const REGLAGES_DEFAUT: Reglages = { fraisService: 0.9, commissionPct: 0, margeEmpreinte: 0.1, livraisonMinKg: 10, fraisLivraison: 15, tvaProduitsMer: 0.021, delaiPositionMin: 30 };
+export type Reglages = { fraisService: number; commissionPct: number; margeEmpreinte: number; livraisonMinKg: number; fraisLivraison: number; tvaProduitsMer: number; delaiPositionMin: number;
+  // règles d'annulation provisoires (à décider entre associés)
+  annulationClientAvantMin: number; absentApresMin: number; penaliteAbsencePct: number; rupturesAlerte: number };
+export const REGLAGES_DEFAUT: Reglages = { fraisService: 0.9, commissionPct: 0, margeEmpreinte: 0.1, livraisonMinKg: 10, fraisLivraison: 15, tvaProduitsMer: 0.021, delaiPositionMin: 30,
+  annulationClientAvantMin: 60, absentApresMin: 60, penaliteAbsencePct: 0.3, rupturesAlerte: 3 };
 export async function reglages(): Promise<Reglages> {
   const d = await db.doc('reglages/general').get();
   return { ...REGLAGES_DEFAUT, ...(d.exists ? d.data() : {}) } as Reglages;
