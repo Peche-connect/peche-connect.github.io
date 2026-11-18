@@ -2,12 +2,25 @@ export type Role = 'client' | 'pecheur';
 
 export type Preparation = { nom: string; supplementKg: number };
 
+// Façons de vendre une espèce, choisies par le pêcheur à la publication :
+// au kilo (petits poissons), à la pièce (gros poissons entiers, poids approximatif), en barquettes
+// déjà préparées (filets, darnes, tranches) ou en lot à prix fixe (poisson volant, lambi…)
+export type Format = 'kilo' | 'piece' | 'portion' | 'lot';
+export type Piece = { id: string; poidsKg: number }; // poids approximatif, le prix se fait à la pesée
+export type TypePortion = 'Filets' | 'Darnes' | 'Tranches';
+
 export type Produit = {
   id: string;
   espece: string;
-  prixKg: number; // en euros
-  dispoKg: number;
-  preparations: Preparation[];
+  format: Format;
+  prixKg: number; // en euros (pas utilisé pour un lot)
+  dispoKg: number; // stock approximatif en kg, pour l'affichage (au kilo : le stock exact)
+  preparations: Preparation[]; // au kilo et à la pièce : entier, vidé, écaillé… (+ supplément au kilo)
+  pasKg?: number; // au kilo : pas du + / − (0,5 ou 1 kg)
+  pieces?: Piece[]; // à la pièce : les poissons disponibles
+  teteAuChoix?: boolean; // à la pièce : le client choisit avec ou sans tête
+  portion?: { type: TypePortion; poidsKg: number; nombre: number }; // barquettes : poids approximatif et nombre
+  lot?: { quantite: number; unite: 'pièces' | 'kg'; prix: number; nombre: number }; // prix fixe par lot, nombre de lots
 };
 
 export type Etal = {
@@ -26,7 +39,15 @@ export type Etal = {
   precision?: string;
 };
 
-export type LignePanier = { produitId: string; espece: string; kg: number; prixKg: number; preparation: string; supplementKg: number };
+export type LignePanier = {
+  produitId: string; espece: string; format?: Format;
+  kg: number; // poids estimé (réel après la pesée) ; pour un lot : poids indicatif
+  prixKg: number; preparation: string; supplementKg: number;
+  pieceId?: string; tete?: 'avec' | 'sans'; // à la pièce
+  nombre?: number; // barquettes ou lots
+  prixLot?: number; // lot à prix fixe
+  libelle?: string; // ex. « barquette de filets ~500 g », « lot de 10 pièces »
+};
 
 export type Panier = { etalId: string; lignes: LignePanier[] } | null;
 

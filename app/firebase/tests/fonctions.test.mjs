@@ -279,6 +279,59 @@ describe('Besoins des professionnels', () => {
   });
 });
 
+describe('Formats de vente (kilo, pièce, barquettes, lot)', () => {
+  const arrivage = (extra = []) => appeler('pecheur', 'publierArrivage', { lignes: [
+    { espece: 'Thon jaune', format: 'kilo', prixKg: 14, dispoKg: 10, preparations: [{ nom: 'Entier', supplementKg: 0 }, { nom: 'En tranches', supplementKg: 2 }] },
+    { espece: 'Dorade coryphène', format: 'piece', prixKg: 13, teteAuChoix: true, pieces: [{ poidsKg: 3.2 }, { poidsKg: 4 }], preparations: [{ nom: 'Entière', supplementKg: 0 }, { nom: 'Écaillé et vidé', supplementKg: 1 }] },
+    { espece: 'Dorade coryphène', format: 'portion', prixKg: 19, portion: { type: 'Filets', poidsKg: 0.5, nombre: 6 } },
+    { espece: 'Poisson volant', format: 'lot', lot: { quantite: 10, unite: 'pièces', prix: 10, nombre: 5 } }, ...extra] });
+  let fc, dorade, filets, volants;
+  test('un même arrivage mélange les formats ; même espèce en double refusée', async () => {
+    const idThon = (await lire('etals/' + etalId)).produits[0].id;
+    await assert.rejects(arrivage([{ espece: 'Dorade coryphène', format: 'piece', prixKg: 12, pieces: [{ poidsKg: 2 }] }]), /En double/);
+    await assert.rejects(arrivage([{ espece: 'Colas', format: 'portion', prixKg: 12, portion: { type: 'Appelez 0696', poidsKg: 0.5, nombre: 2 } }]), /Barquettes invalides/);
+    assert.equal((await arrivage()).produits, 4);
+    const ps = (await lire('etals/' + etalId)).produits;
+    assert.equal(ps[0].id, idThon, 'même identifiant pour le thon au kilo');
+    [, dorade, filets, volants] = ps;
+    assert.equal(dorade.format, 'piece'); assert.equal(dorade.pieces.length, 2); assert.equal(dorade.dispoKg, 7.2);
+    assert.equal(filets.portion.nombre, 6); assert.equal(volants.lot.prix, 10);
+  });
+  test('le client choisit un poisson précis (sans tête), des barquettes et des lots', async () => {
+    const quatre = dorade.pieces.find((x) => x.poidsKg === 4);
+    const r = await appeler('client', 'creerReservation', { etalId, creneau: 'Avant 10 h', lignes: [
+      { produitId: dorade.id, pieceId: quatre.id, tete: 'sans', preparation: 'Écaillé et vidé', kg: 99 },
+      { produitId: filets.id, nombre: 2, kg: 99 },
+      { produitId: volants.id, nombre: 2 }] });
+    fc = r.code;
+    const b = await lire('bons/' + fc);
+    assert.equal(b.montantBloque, 103.4, '(56 + 19) × 1,1 + 20 € de lots + 0,90 €');
+    assert.equal(b.lignes[0].kg, 4, 'poids du poisson choisi, pas celui envoyé'); assert.equal(b.lignes[0].tete, 'sans');
+    assert.equal(b.lignes[1].kg, 1); assert.equal(b.lignes[2].prixLot, 10);
+    const ps = (await lire('etals/' + etalId)).produits;
+    assert.equal(ps[1].pieces.length, 1); assert.equal(ps[2].portion.nombre, 4); assert.equal(ps[3].lot.nombre, 3);
+    await assert.rejects(appeler('autre', 'creerReservation', { etalId, creneau: 'Avant 10 h', lignes: [{ produitId: dorade.id, pieceId: quatre.id }] }), /vient d’être réservé/);
+    await assert.rejects(appeler('autre', 'creerReservation', { etalId, creneau: 'Avant 10 h', lignes: [{ produitId: volants.id, nombre: 9 }] }), /Plus assez de poisson volant/);
+  });
+  test('pesée : poids réel pour le poisson et les barquettes, lots au prix fixe', async () => {
+    const sid = (await lire('bonsSecrets/' + fc)).stripeSession;
+    await webhook({ type: 'checkout.session.completed', data: { object: { id: sid, object: 'checkout.session', status: 'complete', amount_total: 10340, payment_intent: 'pi_formats', metadata: { code: fc } } } });
+    assert.equal((await lire('bons/' + fc)).statut, 'reserve');
+    const { codeRetrait } = await appeler('client', 'monQr', { code: fc });
+    await assert.rejects(appeler('pecheur', 'validerPesee', { code: fc, poids: [4.1, 1.1, 3], preuve: codeRetrait }), /Plus de lots remis/);
+    const r = await appeler('pecheur', 'validerPesee', { code: fc, poids: [4.1, 1.1, 2], preuve: codeRetrait });
+    assert.equal(r.montantPaye, 99.2, '4,1 × 14 + 1,1 × 19 + 2 × 10 + 0,90');
+  });
+  test('republier garde les poissons encore en vente (paniers en cours)', async () => {
+    const reste = (await lire('etals/' + etalId)).produits[1].pieces[0];
+    await appeler('pecheur', 'publierArrivage', { lignes: [
+      { espece: 'Thon jaune', prixKg: 14, dispoKg: 10, preparations: [{ nom: 'Entier', supplementKg: 0 }, { nom: 'En tranches', supplementKg: 2 }] },
+      { espece: 'Dorade coryphène', format: 'piece', prixKg: 13, pieces: [reste, { poidsKg: 5 }] }] });
+    const ps = (await lire('etals/' + etalId)).produits;
+    assert.equal(ps[1].pieces[0].id, reste.id); assert.notEqual(ps[1].pieces[1].id, reste.id);
+  });
+});
+
 describe('Tâches automatiques', () => {
   test('positions expirées effacées, paiements abandonnés remis en vente', async () => {
     const conv = etalId + '_' + comptes.client.uid;

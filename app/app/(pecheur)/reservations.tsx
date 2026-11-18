@@ -3,6 +3,7 @@ import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Pastille, T, Vide } from '../../src/components/ui';
 import { euro, kg } from '../../src/format';
+import { libelleLigne, preparationLigne } from '../../src/formats';
 import { useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -24,7 +25,7 @@ export default function Reservations() {
               <Pastille texte={b.creneau} />
             </View>
             {b.pro ? <View style={{ flexDirection: 'row', gap: 6 }}><Pastille texte={'Pro · ' + b.pro.type} fonce />{b.livraison ? <Pastille texte="Livraison par chauffeur" style={{ backgroundColor: c.doux }} /> : null}</View> : null}
-            <T gris petit>{b.lignes.map((l) => l.espece + ' ' + kg(l.kg) + ' (' + l.preparation.toLowerCase() + ')').join(', ')}</T>
+            <T gris petit>{b.lignes.map((l) => libelleLigne(l) + (preparationLigne(l) ? ' (' + preparationLigne(l) + ')' : '')).join(', ')}</T>
             <Pastille texte={b.statut === 'retire' ? 'Retiré · encaissé ' + euro(b.montantPaye ?? 0) : 'À préparer'} style={{ backgroundColor: b.statut === 'retire' ? '#dff3ea' : c.doux }} />
           </Pressable>
         ))}

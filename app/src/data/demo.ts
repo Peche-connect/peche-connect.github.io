@@ -1,4 +1,4 @@
-import type { Etal } from '../types';
+import type { Etal, Produit, TypePortion } from '../types';
 
 // Ports couverts et coordonnées (pour la carte et les distances)
 // Ports et abris de pêche de Martinique, d'après la carte « Le réseau de la pêche martiniquaise »
@@ -34,45 +34,60 @@ export const PORTS: Record<string, { lat: number; lon: number; type: TypePort; c
 
 export const FILTRES = ['Tout', 'Moins d’1 h', 'Thon', 'Vivaneau', 'Dorade', 'Thazard', 'Colas', 'Langouste', 'Lambi'];
 
-export const ESPECES = ['Thon jaune', 'Bonite', 'Dorade coryphène', 'Balaou', 'Vivaneau', 'Colas', 'Coulirou', 'Thazard', 'Chatrou', 'Langouste', 'Lambi'];
+export const ESPECES = ['Thon jaune', 'Bonite', 'Dorade coryphène', 'Balaou', 'Vivaneau', 'Colas', 'Coulirou', 'Thazard', 'Chatrou', 'Langouste', 'Lambi', 'Poisson volant'];
 
-const p = (id: string, espece: string, prixKg: number, dispoKg: number, preps: [string, number][]) => ({
-  id, espece, prixKg, dispoKg, preparations: preps.map(([nom, supplementKg]) => ({ nom, supplementKg })),
+const preps = (l: [string, number][]) => l.map(([nom, supplementKg]) => ({ nom, supplementKg }));
+// au kilo (petits poissons, thon à la découpe)
+const p = (id: string, espece: string, prixKg: number, dispoKg: number, pr: [string, number][]): Produit => ({
+  id, espece, format: 'kilo', prixKg, dispoKg, pasKg: 0.5, preparations: preps(pr),
+});
+// à la pièce : poids approximatif de chaque poisson
+const pc = (id: string, espece: string, prixKg: number, poids: number[], pr: [string, number][], teteAuChoix = true): Produit => ({
+  id, espece, format: 'piece', prixKg, dispoKg: poids.reduce((t, x) => t + x, 0), teteAuChoix, preparations: preps(pr),
+  pieces: poids.map((poidsKg, i) => ({ id: id + '-' + (i + 1), poidsKg })),
+});
+// barquettes déjà préparées
+const bq = (id: string, espece: string, prixKg: number, type: TypePortion, poidsKg: number, nombre: number): Produit => ({
+  id, espece, format: 'portion', prixKg, dispoKg: poidsKg * nombre, preparations: [], portion: { type, poidsKg, nombre },
+});
+// lot à prix fixe
+const lt = (id: string, espece: string, quantite: number, unite: 'pièces' | 'kg', prix: number, nombre: number): Produit => ({
+  id, espece, format: 'lot', prixKg: 0, dispoKg: unite === 'kg' ? quantite * nombre : 0, preparations: [], lot: { quantite, unite, prix, nombre },
 });
 
 // Données d'exemple du mode démo (remplacées par Supabase en production)
 export const ETALS_DEMO: Etal[] = [
   { id: 'jm', pecheur: 'Jean-Marc', port: 'Le Robert', note: 4.8, avis: 32, bateau: 'Yole Bèl Lanmè · DCP', debarque: 7 * 60 + 10, limiteRetrait: 12 * 60 + 30,
     lieu: 'Ponton du front de mer, Le Robert', precision: 'yole Bèl Lanmè, à droite de la cale',
-    produits: [p('jm1', 'Thon jaune', 14, 22, [['Entier', 0], ['En tranches', 2]]), p('jm2', 'Dorade coryphène', 13, 9, [['Entière', 0], ['En filets', 3]]), p('jm3', 'Balaou', 10, 4, [['Vendu entier', 0]])] },
+    produits: [p('jm1', 'Thon jaune', 14, 22, [['En tranches', 0], ['En darnes', 1]]), pc('jm2', 'Dorade coryphène', 13, [3.2, 4, 4.8], [['Entière', 0], ['Écaillé et vidé', 1]]), bq('jm4', 'Dorade coryphène', 19, 'Filets', 0.5, 6), p('jm3', 'Balaou', 10, 4, [['Vendu entier', 0]])] },
   { id: 'sy', pecheur: 'Sylvio', port: 'Le François', note: 4.7, avis: 18, bateau: 'Yole Ti Kaz · côtière', debarque: 7 * 60 + 35, limiteRetrait: 12 * 60,
     lieu: 'Marché du François', precision: 'premier étal à gauche en entrant',
-    produits: [p('sy1', 'Vivaneau', 18, 12, [['Entier', 0], ['Écaillé et vidé', 1]]), p('sy2', 'Colas', 15, 8, [['Entier', 0], ['Écaillé et vidé', 1]]), p('sy3', 'Chatrou', 16, 5, [['Entier', 0], ['Nettoyé', 2]])] },
+    produits: [pc('sy1', 'Vivaneau', 18, [1.2, 1.5, 1.8, 2.2], [['Entier', 0], ['Écaillé et vidé', 1]]), p('sy2', 'Colas', 15, 8, [['Entier', 0], ['Écaillé et vidé', 1]]), p('sy3', 'Chatrou', 16, 5, [['Entier', 0], ['Nettoyé', 2]])] },
   { id: 'sp', pecheur: 'Didier', port: 'Saint-Pierre', note: 4.9, avis: 36, bateau: 'Yole Montagne Pelée · DCP', debarque: 7 * 60 + 30, limiteRetrait: 12 * 60,
     lieu: 'Débarcadère de Saint-Pierre', precision: 'sous le carbet bleu, face à la mer',
-    produits: [p('sp1', 'Thon jaune', 13, 25, [['Entier', 0], ['En tranches', 2]]), p('sp2', 'Bonite', 10, 12, [['Entière', 0], ['En tranches', 2]]), p('sp3', 'Dorade coryphène', 13, 6, [['Entière', 0], ['En filets', 3]])] },
+    produits: [p('sp1', 'Thon jaune', 13, 25, [['En tranches', 0], ['En darnes', 1]]), pc('sp2', 'Bonite', 10, [2.5, 3, 3.5], [['Entière', 0], ['Écaillé et vidé', 1]]), bq('sp3', 'Dorade coryphène', 18, 'Darnes', 1, 5)] },
   { id: 'jo', pecheur: 'Josette', port: 'Sainte-Luce', note: 4.9, avis: 41, bateau: 'Yole Fanm Doubout · DCP', debarque: 7 * 60 + 50, limiteRetrait: 11 * 60 + 30,
     lieu: 'Débarcadère de Sainte-Luce', precision: 'sous le carbet des pêcheurs',
-    produits: [p('jo1', 'Thazard', 15, 14, [['Entier', 0], ['En tranches', 2]]), p('jo2', 'Lambi', 25, 6, [['Nettoyé', 0]])] },
+    produits: [pc('jo1', 'Thazard', 15, [4, 5.5, 6], [['Entier', 0], ['Écaillé et vidé', 1]]), lt('jo2', 'Lambi', 1, 'kg', 25, 6)] },
   { id: 'di', pecheur: 'Yannick', port: 'Le Diamant', note: 4.7, avis: 21, bateau: 'Yole Rocher Diamant · côtière', debarque: 7 * 60 + 15, limiteRetrait: 12 * 60,
     lieu: 'Plage du Diamant, devant le bourg', precision: 'à côté de l’église, glacière blanche',
-    produits: [p('di1', 'Colas', 15, 7, [['Entier', 0], ['Écaillé et vidé', 1]]), p('di2', 'Vivaneau', 17, 5, [['Entier', 0], ['Écaillé et vidé', 1]]), p('di3', 'Coulirou', 9, 10, [['Entier', 0]])] },
+    produits: [p('di1', 'Colas', 15, 7, [['Entier', 0], ['Écaillé et vidé', 1]]), pc('di2', 'Vivaneau', 17, [1.4, 2], [['Entier', 0], ['Écaillé et vidé', 1]]), p('di3', 'Coulirou', 9, 10, [['Entier', 0]])] },
   { id: 'ro', pecheur: 'Rodrigue', port: 'Le Robert', note: 4.6, avis: 12, bateau: 'Yole Lavi Bel · côtière', debarque: 6 * 60 + 20, limiteRetrait: 12 * 60,
     lieu: 'Ponton du front de mer, Le Robert', precision: 'au bout du ponton, glacière bleue',
-    produits: [p('ro1', 'Coulirou', 9, 15, [['Entier', 0]]), p('ro2', 'Colas', 14, 6, [['Entier', 0], ['Écaillé et vidé', 1]])] },
+    produits: [p('ro1', 'Coulirou', 9, 15, [['Entier', 0]]), p('ro2', 'Colas', 14, 6, [['Entier', 0], ['Écaillé et vidé', 1]]), lt('ro3', 'Poisson volant', 10, 'pièces', 10, 8)] },
   { id: 'bf', pecheur: 'Christian', port: 'Belle-Fontaine', note: 4.8, avis: 19, bateau: 'Yole Ti Pwason · DCP', debarque: 7 * 60 + 40, limiteRetrait: 12 * 60,
     lieu: 'Marché Michel-Mourtialon, Belle-Fontaine', precision: 'étal 3, côté mer',
-    produits: [p('bf1', 'Thon jaune', 14, 18, [['Entier', 0], ['En tranches', 2]]), p('bf2', 'Dorade coryphène', 13, 10, [['Entière', 0], ['En filets', 3]]), p('bf3', 'Balaou', 9, 8, [['Vendu entier', 0]])] },
+    produits: [p('bf1', 'Thon jaune', 14, 18, [['En tranches', 0], ['En darnes', 1]]), pc('bf2', 'Dorade coryphène', 13, [3.5, 4.2, 5, 6], [['Entière', 0], ['Écaillé et vidé', 1]]), p('bf3', 'Balaou', 9, 8, [['Vendu entier', 0]])] },
   { id: 'ml', pecheur: 'Marie-Line', port: 'Case-Pilote', note: 4.9, avis: 27, bateau: 'Yole Bon Vent · fond', debarque: 5 * 60 + 50, limiteRetrait: 11 * 60,
     lieu: 'Port de Case-Pilote', precision: 'à côté de l’église, sur la plage',
-    produits: [p('ml1', 'Vivaneau', 17, 3, [['Entier', 0], ['Écaillé et vidé', 1]]), p('ml2', 'Colas', 14, 2, [['Entier', 0]])] },
+    produits: [pc('ml1', 'Vivaneau', 17, [1.3, 1.6], [['Entier', 0], ['Écaillé et vidé', 1]]), p('ml2', 'Colas', 14, 2, [['Entier', 0]])] },
   { id: 'fa', pecheur: 'Fabrice', port: 'Grand-Rivière', note: 4.8, avis: 22, bateau: 'Yole Nord Atlantique · DCP', debarque: 6 * 60, limiteRetrait: 11 * 60,
     lieu: 'Port de Grand-Rivière', precision: 'devant la coopérative',
-    produits: [p('fa1', 'Thon jaune', 13, 30, [['Entier', 0], ['En tranches', 2]]), p('fa2', 'Langouste', 38, 6, [['Vivante', 0]])] },
+    produits: [p('fa1', 'Thon jaune', 13, 30, [['En tranches', 0], ['En darnes', 1]]), pc('fa2', 'Langouste', 38, [0.8, 1, 1.2, 0.9], [['Vivante', 0]], false)] },
   { id: 'ge', pecheur: 'Gérard', port: 'Fort-de-France', note: 4.5, avis: 54, bateau: 'Yole Madinina · côtière', debarque: 6 * 60 + 30, limiteRetrait: 13 * 60,
     lieu: 'Marché aux poissons, Fort-de-France', precision: 'allée centrale, étal 12',
-    produits: [p('ge1', 'Thazard', 14, 10, [['Entier', 0], ['En tranches', 2]]), p('ge2', 'Balaou', 9, 12, [['Vendu entier', 0]])] },
+    produits: [bq('ge1', 'Thazard', 17, 'Darnes', 1, 8), p('ge2', 'Balaou', 9, 12, [['Vendu entier', 0]])] },
   { id: 'na', pecheur: 'Nadège', port: 'Le Marin', note: 4.7, avis: 15, bateau: 'Yole Sud Sauvage · DCP', debarque: 6 * 60 + 40, limiteRetrait: 12 * 60,
     lieu: 'Marché aux poissons du Marin', precision: 'sous la tente, à droite de l’entrée',
-    produits: [p('na1', 'Dorade coryphène', 12, 11, [['Entière', 0], ['En filets', 3]]), p('na2', 'Thazard', 15, 7, [['Entier', 0], ['En tranches', 2]])] },
+    produits: [pc('na1', 'Dorade coryphène', 12, [3, 3.8, 4.5], [['Entière', 0], ['Écaillé et vidé', 1]]), bq('na2', 'Thazard', 17, 'Darnes', 1, 6)] },
 ];

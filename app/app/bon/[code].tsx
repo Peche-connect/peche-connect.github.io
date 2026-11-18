@@ -9,6 +9,7 @@ import { Suivi } from '../../src/components/Suivi';
 import { Bouton, EnTete, Ligne, Pastille, T, Vide } from '../../src/components/ui';
 import { PORTS } from '../../src/data/demo';
 import { detailTva, euro, kg, TVA_PRODUITS_MER } from '../../src/format';
+import { cleLigne, libelleLigne, preparationLigne, quantiteLigne } from '../../src/formats';
 import { MODE_DEMO, useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -32,7 +33,7 @@ export default function BonEcran() {
       <EnTete titre={'Commande ' + b.code} sousTitre={'Étal de ' + e.pecheur + ' · ' + e.port} fermer />
       <ScrollView contentContainerStyle={{ padding: 16, gap: 12 }}>
         <T tresGras style={{ fontSize: 20 }}>{paye ? 'Paiement en cours de confirmation…' : 'À régler pour confirmer'}</T>
-        {b.lignes.map((l, i) => <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T>{l.espece}</T><T tresGras>{kg(l.kg)}</T></View>)}
+        {b.lignes.map((l, i) => <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}><T style={{ flex: 1 }}>{libelleLigne(l)}</T><T tresGras>{quantiteLigne(l, false)}</T></View>)}
         <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>Montant bloqué (max)</T><T tresGras>{euro(b.montantBloque)}</T></View>
         <T gris>Comme pour une réservation, seul le poids réel est débité à la pesée.</T>
         {paye ? null : <Bouton titre={'Payer ' + euro(b.montantBloque) + ' max'} onPress={() => app.payerBon(b.code)} />}
@@ -64,7 +65,7 @@ export default function BonEcran() {
           {!retire && qr.pin ? <T gris>Si le QR ne passe pas, dites au pêcheur votre code de retrait : <T tresGras style={{ color: c.texte, letterSpacing: 2 }}>{qr.pin.slice(0, 3) + ' ' + qr.pin.slice(3)}</T>. Ne le donnez qu’au moment de la pesée.</T> : null}
           <Pastille texte={retire ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) : 'À retirer · en attente de pesée'} style={retire ? { backgroundColor: '#dff3ea' } : { backgroundColor: c.doux }} />
           <Ligne />
-          {b.lignes.map((l) => <View key={l.produitId} style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T>{l.espece}, {l.preparation.toLowerCase()}</T><T tresGras>{kg(l.kg)}</T></View>)}
+          {b.lignes.map((l) => <View key={cleLigne(l)} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}><T style={{ flex: 1 }}>{libelleLigne(l)}{preparationLigne(l) ? ', ' + preparationLigne(l) : ''}</T><T tresGras>{quantiteLigne(l, retire)}</T></View>)}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>{retire ? 'Payé (poids réel)' : 'Montant bloqué'}</T><T tresGras>{retire ? euro(b.montantPaye ?? 0) : euro(b.montantBloque) + ' max'}</T></View>
         </View>
         {b.pro ? (() => {

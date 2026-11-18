@@ -31,13 +31,15 @@ export const portConnu = (t: unknown) => PORTS.find((p) => sansAccents(p) === sa
 export const preparationConnue = (t: unknown) => PREPARATIONS.find((p) => sansAccents(p) === sansAccents(normaliser(t))) ?? null;
 
 // ───────── Montants ─────────
-export type Ligne = { kg: number; prixKg: number; supplementKg: number };
+// format « lot » : prix fixe (nombre × prixLot), pas de pesée ; les autres : poids × (prix/kg + supplément)
+export type Ligne = { kg: number; prixKg: number; supplementKg: number; format?: string; nombre?: number; prixLot?: number };
 type R = { fraisService: number; commissionPct: number; margeEmpreinte: number };
 const arrondi = (n: number) => Math.round(n * 100) / 100;
-export const sousTotal = (lignes: Ligne[]) => lignes.reduce((s, l) => s + l.kg * (l.prixKg + l.supplementKg), 0);
-// Empreinte bloquée à la réservation (poids estimé + marge + frais de service + livraison)
+export const valeurLigne = (l: Ligne) => (l.format === 'lot' ? (l.nombre ?? 0) * (l.prixLot ?? 0) : l.kg * (l.prixKg + l.supplementKg));
+export const sousTotal = (lignes: Ligne[]) => lignes.reduce((s, l) => s + valeurLigne(l), 0);
+// Empreinte bloquée à la réservation : lignes pesées + marge, lots au prix fixe, frais de service, livraison
 export const montantBloque = (r: R, lignes: Ligne[], fraisLivraison = 0) =>
-  arrondi(arrondi(sousTotal(lignes) * (1 + r.margeEmpreinte) + r.fraisService) + fraisLivraison);
+  arrondi(arrondi(sousTotal(lignes.filter((l) => l.format !== 'lot')) * (1 + r.margeEmpreinte) + sousTotal(lignes.filter((l) => l.format === 'lot')) + r.fraisService) + fraisLivraison);
 // À la pesée : poids réel + frais ; part de la plateforme = commission + frais de service + livraison
 export function montantsPesee(r: R, lignesPesees: Ligne[], fraisLivraison = 0) {
   const st = sousTotal(lignesPesees);

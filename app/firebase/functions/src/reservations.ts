@@ -7,8 +7,8 @@ import { emettreFacture } from './factures';
 import { notifier } from './notifier';
 import { CODE_BON, codeRetrait, creneaux, especeConnue, masquerNumeros, montantBloque, montantsPesee, nomPropre, normaliser, preuveValide, signerBon } from './regles';
 
-export type LigneBon = { produitId: string | null; espece: string; kg: number; prixKg: number; preparation: string; supplementKg: number };
-type Produit = { id: string; espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] };
+import { appliquerPesee, prendre, rendre, rienRemis, type Demande, type LigneBon, type Produit } from './formats';
+export type { LigneBon };
 const KG_MAX_PARTICULIER = 10, KG_MAX_PRO = 100;
 const INTROUVABLE = 'Bon introuvable.'; // même réponse si le bon n'existe pas ou n'est pas à vous
 
@@ -57,11 +57,7 @@ export async function annulerBon(code: string, raison = 'paiement non effectué'
     if (!b || !['en_attente_paiement', 'reserve', 'en_livraison'].includes(b.statut)) return;
     const etalRef = db.doc('etals/' + b.etalId); const etal = (await t.get(etalRef)).data();
     if (etal && b.origine !== 'demande') {
-      const produits = (etal.produits as Produit[]).map((p) => {
-        const kg = (b.lignes as LigneBon[]).filter((l) => l.produitId === p.id).reduce((s, l) => s + l.kg, 0);
-        return kg ? { ...p, dispoKg: Math.round((p.dispoKg + kg) * 10) / 10 } : p;
-      });
-      t.update(etalRef, { produits });
+      t.update(etalRef, { produits: rendre(etal.produits as Produit[], b.lignes as LigneBon[]) });
     }
     t.update(ref, { statut: 'annule', ...ajouterEtape(t, code, b, 'annulee', par, { raison }) });
   });
@@ -71,7 +67,7 @@ export const creerReservation = onCall({ ...APPEL, consumeAppCheckToken: APPCHEC
   const uid = connecte(req);
   if (req.auth?.token.email_verified !== true) throw erreur('failed-precondition', 'Confirmez votre adresse e-mail avant de réserver.');
   await limiter(uid, 'reservation', 10);
-  const d = (req.data ?? {}) as { etalId: string; lignes: { produitId: string; kg: number; preparation: string }[]; creneau: string; livraison?: boolean };
+  const d = (req.data ?? {}) as { etalId: string; lignes: Demande[]; creneau: string; livraison?: boolean };
   if (typeof d.etalId !== 'string' || !/^[A-Za-z0-9]{1,40}$/.test(d.etalId) || !Array.isArray(d.lignes) || !d.lignes.length || d.lignes.length > 20) throw erreur('invalid-argument', 'Panier invalide.');
   const compteStripe = (await db.doc('comptesStripe/' + d.etalId).get()).data()?.compte as string | undefined;
   if (!compteStripe) throw erreur('failed-precondition', 'Ce pêcheur ne peut pas encore recevoir de paiement.');
@@ -87,15 +83,11 @@ export const creerReservation = onCall({ ...APPEL, consumeAppCheckToken: APPCHEC
     // anti-abus : pas plus de 2 réservations non payées à la fois (sinon on bloquerait le poisson des autres)
     const enAttente = await t.get(db.collection('bons').where('clientId', '==', uid).where('statut', '==', 'en_attente_paiement').where('origine', '==', 'panier'));
     if (enAttente.size >= 2) throw erreur('resource-exhausted', 'Vous avez déjà 2 réservations en attente de paiement : réglez-les ou attendez 30 minutes.');
-    const produits = (etal.produits as Produit[]).map((p) => ({ ...p }));
+    const produits: Produit[] = JSON.parse(JSON.stringify(etal.produits ?? [])); // copie : le stock est retiré dedans
     const lignes: LigneBon[] = d.lignes.map((l) => {
       const p = produits.find((x) => x.id === l?.produitId);
-      const kg = Math.round(Number(l?.kg) * 10) / 10;
       if (!p) throw erreur('failed-precondition', 'Un poisson de votre panier n’est plus en vente.');
-      if (!(kg > 0) || kg > p.dispoKg) throw erreur('failed-precondition', 'Plus assez de ' + p.espece.toLowerCase() + ' (reste ' + String(p.dispoKg).replace('.', ',') + ' kg).');
-      const prep = p.preparations.find((x) => x.nom === l.preparation) ?? p.preparations[0];
-      p.dispoKg = Math.round((p.dispoKg - kg) * 10) / 10;
-      return { produitId: p.id, espece: p.espece, kg, prixKg: p.prixKg, preparation: prep.nom, supplementKg: prep.supplementKg };
+      return prendre(p, l ?? {}); // selon le format : kilos, poisson précis, barquettes ou lots
     });
     const totalKg = lignes.reduce((s, l) => s + l.kg, 0);
     const infosPro = pro.data();
@@ -196,14 +188,14 @@ export const validerPesee = onCall({ ...APPEL, consumeAppCheckToken: APPCHECK, s
   const lignes = b.lignes as LigneBon[];
   const poids = d.poids;
   if (!Array.isArray(poids) || poids.length !== lignes.length || poids.some((p) => !(typeof p === 'number' && p >= 0 && p < 1000))) throw erreur('invalid-argument', 'Poids invalides.');
-  const pesees = lignes.map((l, i) => ({ ...l, kg: Math.round(poids[i] * 10) / 10 }));
+  const pesees = appliquerPesee(lignes, poids); // poids réel, ou nombre de lots remis
   const paiement = (await db.doc('bonsSecrets/' + code).get()).data()?.stripePaiement as string | undefined;
   if (!paiement) throw erreur('failed-precondition', 'Paiement introuvable pour ce bon.');
   const fermer = { fermeeLe: Timestamp.fromMillis(Date.now() + 24 * 3600_000) }; // messagerie fermée 24 h après le retrait
   const conv = db.doc('conversations/' + b.etalId + '_' + b.clientId);
 
   const pecheur: Auteur = { uid, role: 'pecheur' };
-  if (pesees.every((l) => l.kg === 0)) {
+  if (rienRemis(pesees)) {
     await stripe().paymentIntents.cancel(paiement);
     await db.runTransaction(async (t) => {
       const x = (await t.get(ref)).data();
@@ -234,7 +226,7 @@ export const validerPesee = onCall({ ...APPEL, consumeAppCheckToken: APPCHECK, s
   await db.runTransaction(async (t) => {
     const x = (await t.get(ref)).data();
     t.update(ref, { statut: 'retire', lignes: pesees, montantPaye: m.total, commission: m.plateforme, retireLe: FieldValue.serverTimestamp(),
-      ...ajouterEtape(t, code, x, 'retiree', pecheur, { poids: pesees.map((l) => ({ espece: l.espece, kg: l.kg })), debite: m.total, preuve: String(d.preuve ?? '').length === 6 ? 'code de retrait' : 'QR' }) });
+      ...ajouterEtape(t, code, x, 'retiree', pecheur, { poids: pesees.map((l) => (l.format === 'lot' ? { espece: l.espece, lots: l.nombre ?? 0 } : { espece: l.espece, kg: l.kg })), debite: m.total, preuve: String(d.preuve ?? '').length === 6 ? 'code de retrait' : 'QR' }) });
   });
   if (b.pro) await emettreFacture(code).catch(() => null); // sinon refaite par les tâches automatiques
   await db.doc('bonsSecrets/' + code).update({ nonce: FieldValue.delete() }); // l'ancien QR ne vaut plus rien
@@ -296,7 +288,7 @@ export const accepterDemande = onCall(APPEL, async (req) => {
     if (d.proId === uid) throw erreur('failed-precondition', 'Vous ne pouvez pas répondre à votre propre besoin.');
     const pro = (await t.get(db.doc('pros/' + d.proId))).data();
     if (!pro) throw erreur('failed-precondition', 'Ce professionnel n’est plus inscrit.');
-    const lignes: LigneBon[] = [{ produitId: null, espece: d.espece, kg: d.kg, prixKg: d.prixMaxKg, preparation: 'Entier', supplementKg: 0 }];
+    const lignes: LigneBon[] = [{ produitId: null, espece: d.espece, format: 'kilo', kg: d.kg, prixKg: d.prixMaxKg, preparation: 'Entier', supplementKg: 0 }];
     const livraison = d.livraison === true && d.kg >= r.livraisonMinKg ? { adresse: pro.adresse || (pro.raison + ', ' + pro.commune), frais: r.fraisLivraison } : null;
     const code = await prochainCode(t);
     t.set(db.doc('bons/' + code), {

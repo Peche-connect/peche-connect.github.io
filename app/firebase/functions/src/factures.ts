@@ -4,6 +4,7 @@
 // Deux parties distinctes : le poisson, vendu par le pêcheur (facture émise par Pêche Connect en son nom
 // et pour son compte, mandat de facturation prévu aux conditions) ; les services de Pêche Connect
 // (frais de service, livraison). Taux de TVA et mentions à faire valider par l'expert-comptable.
+import type { LigneBon } from './formats';
 import { getStorage } from 'firebase-admin/storage';
 import PDFDocument from 'pdfkit';
 import { db, FieldValue } from './commun';
@@ -21,7 +22,7 @@ export type DonneesFacture = {
   societe: typeof SOCIETE_DEFAUT;
   vendeur: { uid: string; prenom: string; nomLegal: string | null; siret: string | null; bateau: string; immatriculation: string | null; port: string };
   acheteur: { uid: string; raison: string; siret: string; siretVerifie: boolean; adresse: string | null; commune: string };
-  poisson: { lignes: { designation: string; kg: number; prixKgTtc: number; totalTtc: number }[]; ttc: number; ht: number; tva: number; taux: number };
+  poisson: { lignes: { designation: string; kg: number; prixKgTtc: number; totalTtc: number; detail?: string }[]; ttc: number; ht: number; tva: number; taux: number };
   services: { lignes: { designation: string; totalTtc: number }[]; ttc: number; ht: number; tva: number; taux: number };
   totalTtc: number;
 };
@@ -45,8 +46,14 @@ export async function emettreFacture(code: string): Promise<string | null> {
 
     const r = (await t.get(db.doc('reglages/general'))).data() ?? {};
     const fraisService = Number(r.fraisService ?? 0.9);
-    const lignes = (b.lignes as { espece: string; preparation: string; kg: number; prixKg: number; supplementKg: number }[]).filter((l) => l.kg > 0)
-      .map((l) => ({ designation: l.espece + ' (' + l.preparation.toLowerCase() + ')', kg: l.kg, prixKgTtc: arrondi(l.prixKg + l.supplementKg), totalTtc: arrondi(l.kg * (l.prixKg + l.supplementKg)) }));
+    const lignes = (b.lignes as LigneBon[]).filter((l) => (l.format === 'lot' ? (l.nombre ?? 0) > 0 : l.kg > 0)).map((l) => {
+      if (l.format === 'lot') {
+        const n = l.nombre ?? 0, pu = l.prixLot ?? 0;
+        return { designation: l.espece + ' (' + (l.libelle ?? 'lot') + ')', kg: l.kg, prixKgTtc: 0, totalTtc: arrondi(n * pu), detail: n + ' × ' + euro(pu) + ' TTC (prix fixe)' };
+      }
+      const prep = l.format === 'portion' ? (l.libelle ?? l.preparation.toLowerCase()) : l.preparation.toLowerCase() + (l.tete === 'sans' ? ', sans tête' : '');
+      return { designation: l.espece + ' (' + prep + ')', kg: l.kg, prixKgTtc: arrondi(l.prixKg + l.supplementKg), totalTtc: arrondi(l.kg * (l.prixKg + l.supplementKg)) };
+    });
     const poissonTtc = arrondi(lignes.reduce((s, l) => s + l.totalTtc, 0));
     const lignesServices = [{ designation: 'Frais de service Pêche Connect', totalTtc: fraisService }];
     if (b.livraison?.frais) lignesServices.push({ designation: 'Livraison par chauffeur', totalTtc: Number(b.livraison.frais) });
@@ -123,7 +130,7 @@ export function fabriquerPdf(f: DonneesFacture): Promise<Buffer> {
     const v = f.vendeur;
     tableau('1. Produits de la mer', 'Vendus par ' + (v.nomLegal ?? v.prenom) + (v.siret ? ' (SIRET ' + v.siret + ')' : '') + ', pêcheur professionnel, bateau « ' + v.bateau + ' »' + (v.immatriculation ? ' (' + v.immatriculation + ')' : '') + ', port de ' + v.port
       + '. Facture émise par Pêche Connect au nom et pour le compte du vendeur (mandat de facturation).',
-      f.poisson.lignes.map((l) => ({ designation: l.designation, detail: String(l.kg).replace('.', ',') + ' kg × ' + euro(l.prixKgTtc) + ' TTC/kg', total: l.totalTtc })), f.poisson);
+      f.poisson.lignes.map((l) => ({ designation: l.designation, detail: l.detail ?? String(l.kg).replace('.', ',') + ' kg × ' + euro(l.prixKgTtc) + ' TTC/kg', total: l.totalTtc })), f.poisson);
     tableau('2. Services Pêche Connect', 'Vendus par ' + f.societe.raison + '.', f.services.lignes.map((l) => ({ designation: l.designation, total: l.totalTtc })), f.services);
     doc.moveDown(1.2).font('Helvetica-Bold').fontSize(13).text('Total payé : ' + euro(f.totalTtc), 50, doc.y, { width: 495, align: 'right' });
     doc.moveDown(2).font('Helvetica').fontSize(8).fillColor('#62625d');

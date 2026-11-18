@@ -17,7 +17,8 @@ import { connectStorageEmulator, getBlob, getStorage, ref, uploadBytes, type Fir
 import { Platform } from 'react-native';
 import { activerAppCheck } from './appcheck';
 import * as N from './natif';
-import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Session } from '../types';
+import { normaliserProduit } from '../formats';
+import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Produit, Session } from '../types';
 
 const CONFIG = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -173,7 +174,7 @@ type DocEtal = { prenom: string; port: string; note: number; avis: number; batea
 const versEtal = (id: string, e: DocEtal, prive?: { lieu?: string; precision?: string }): Etal => ({
   id, pecheur: e.prenom, port: e.port, note: Number(e.note ?? 5), avis: e.avis ?? 0, bateau: e.bateau ?? '', photo: e.photoUrl ?? undefined,
   debarque: e.debarqueLe ? minutesMartinique(e.debarqueLe) : -600, limiteRetrait: e.limiteRetrait ?? 720,
-  lieu: prive?.lieu || undefined, precision: prive?.precision || undefined, produits: e.produits ?? [],
+  lieu: prive?.lieu || undefined, precision: prive?.precision || undefined, produits: (e.produits ?? []).map(normaliserProduit),
 });
 
 // Étals visibles ; adresse exacte seulement pour son propre étal et ceux où l'on a un bon payé
@@ -284,7 +285,7 @@ async function ouvrir(url: string) {
 
 export async function reserver(etalId: string, lignes: LignePanier[], creneau: string, livraison: boolean) {
   const r = await fonction<{ code: string; url: string }>('creerReservation', {
-    etalId, creneau, livraison, lignes: lignes.map((l) => ({ produitId: l.produitId, kg: l.kg, preparation: l.preparation })),
+    etalId, creneau, livraison, lignes: lignes.map((l) => ({ produitId: l.produitId, kg: l.kg, preparation: l.preparation, pieceId: l.pieceId, tete: l.tete, nombre: l.nombre })),
   });
   await ouvrir(r.url); // page de paiement sécurisée de Stripe (empreinte bancaire)
   return r.code;
@@ -350,7 +351,7 @@ export async function envoyerPhoto(etalId: string, uri: string, type = 'image/jp
   await essai(() => uploadBytes(ref(_st, chemin), corps, { contentType: type }));
   return chemin;
 }
-export async function publierArrivage(_etalId: string, lignes: { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] }[], photoChemin?: string) {
+export async function publierArrivage(_etalId: string, lignes: Omit<Produit, 'id'>[], photoChemin?: string) {
   await fonction('publierArrivage', { lignes, ...(photoChemin ? { photoChemin } : {}) });
 }
 

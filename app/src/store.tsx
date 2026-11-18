@@ -2,10 +2,12 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { ETALS_DEMO, PORTS } from './data/demo';
-import { distanceKm, FRAIS_LIVRAISON, FRAIS_SERVICE, heure, kg, LIVRAISON_MIN_KG, montantBloque, sousTotal } from './format';
+const VERSION_DEMO = 2; // à augmenter quand les données de démo changent de forme
+import { distanceKm, FRAIS_LIVRAISON, heure, kg, LIVRAISON_MIN_KG } from './format';
+import { cleLigne, disponible, libelleLigne, montantBloque, montantPaye, nomBarquette, nomLot, normaliserProduit, stockKg } from './formats';
 import { versDataUrl, type Enregistrement } from './audio';
 import * as B from './services/backend';
-import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Role, Session } from './types';
+import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Produit, Role, Session } from './types';
 
 // Mode démo : tout est stocké sur le téléphone, aucun paiement réel.
 // Mode réel : dès que les clés Firebase EXPO_PUBLIC_FIREBASE_* sont renseignées (fichier .env, voir
@@ -146,7 +148,8 @@ function useMagasin() {
       if (!v) return;
       try {
         const lu = JSON.parse(v);
-        if (MODE_DEMO) setE({ ...etatInitial(), ...lu, demandes: lu.demandes ?? etatInitial().demandes, suivis: lu.suivis ?? [], erreur: null });
+        // démo : une sauvegarde d'une ancienne version (sans les formats de vente) est ignorée
+        if (MODE_DEMO && lu.v === VERSION_DEMO) setE({ ...etatInitial(), ...lu, demandes: lu.demandes ?? etatInitial().demandes, suivis: lu.suivis ?? [], erreur: null });
         else setE((x) => ({ ...x, commune: lu.commune ?? x.commune, panier: lu.panier ?? null, creneau: lu.creneau ?? null }));
       } catch { /* données illisibles : on repart de zéro */ }
     }).finally(async () => {
@@ -168,7 +171,7 @@ function useMagasin() {
     if (!pret) return;
     const { session, commune, panier, creneau } = e;
     const aGarder = MODE_DEMO ? { ...e, erreur: null } : { commune, panier, creneau };
-    AsyncStorage.setItem(CLE, JSON.stringify(aGarder)).catch(() => {});
+    AsyncStorage.setItem(CLE, JSON.stringify({ ...aGarder, v: VERSION_DEMO })).catch(() => {});
     if (!MODE_DEMO && session) B.enregistrerNotifications();
   }, [e, pret]);
 
@@ -222,9 +225,9 @@ function useMagasin() {
       maj((x) => {
         const d = x.demandes.find((y) => y.id === id); if (!d || d.statut !== 'ouverte') return x;
         const code = 'R-' + x.prochainCode; x.prochainCode += 1;
-        const lignes = [{ produitId: 'dem-' + id, espece: d.espece, kg: d.kg, prixKg: d.prixMaxKg, preparation: 'Entier', supplementKg: 0 }];
+        const lignes: LignePanier[] = [{ produitId: 'dem-' + id, espece: d.espece, format: 'kilo', kg: d.kg, prixKg: d.prixMaxKg, preparation: 'Entier', supplementKg: 0 }];
         const client = d.auteur;
-        x.bons.push({ code, etalId, client, pro: d.pro, livraison: d.livraison, lignes, creneau: d.pour === 'Demain' ? 'Demain matin' : 'Aujourd’hui', statut: 'reserve', montantBloque: montantBloque(sousTotal(lignes)) + (d.livraison?.frais ?? 0), creeLe: x.horloge });
+        x.bons.push({ code, etalId, client, pro: d.pro, livraison: d.livraison, lignes, creneau: d.pour === 'Demain' ? 'Demain matin' : 'Aujourd’hui', statut: 'reserve', montantBloque: montantBloque(lignes, d.livraison?.frais ?? 0), creeLe: x.horloge });
         d.statut = 'acceptee'; d.etalId = etalId; d.bon = code;
         const cid = etalId + '|' + client;
         x.convs[cid] = x.convs[cid] ?? { id: cid, etalId, client, bon: code, messages: [], luClient: false, luPecheur: true };
@@ -244,25 +247,64 @@ function useMagasin() {
     choisirCommune(c: string) { maj((x) => ({ ...x, commune: c })); },
 
     // ───────── Panier (toujours sur le téléphone) ─────────
+    // Au kilo : poids voulu (pas de 0,5 ou 1 kg)
     reglerKg(etalId: string, produitId: string, q: number) {
       maj((x) => {
         const et = x.etals.find((t) => t.id === etalId)!; const pr = et.produits.find((p) => p.id === produitId)!;
         q = Math.max(0, Math.min(pr.dispoKg, Math.round(q * 10) / 10));
         if (!x.panier || x.panier.etalId !== etalId) x.panier = { etalId, lignes: [] };
         let l = x.panier.lignes.find((y) => y.produitId === produitId);
-        if (!l && q > 0) { l = { produitId, espece: pr.espece, kg: 0, prixKg: pr.prixKg, preparation: pr.preparations[0].nom, supplementKg: pr.preparations[0].supplementKg }; x.panier.lignes.push(l); }
+        if (!l && q > 0) { l = { produitId, espece: pr.espece, format: 'kilo', kg: 0, prixKg: pr.prixKg, preparation: pr.preparations[0]?.nom ?? 'Entier', supplementKg: pr.preparations[0]?.supplementKg ?? 0 }; x.panier.lignes.push(l); }
         if (l) l.kg = q;
-        x.panier.lignes = x.panier.lignes.filter((y) => y.kg > 0);
+        x.panier.lignes = x.panier.lignes.filter((y) => y.kg > 0 || (y.nombre ?? 0) > 0);
         if (!x.panier.lignes.length) x.panier = null;
         return x;
       });
     },
-    choisirPreparation(produitId: string, nom: string) {
+    // À la pièce : le client choisit un poisson précis (poids approximatif)
+    basculerPiece(etalId: string, produitId: string, pieceId: string) {
       maj((x) => {
-        const l = x.panier?.lignes.find((y) => y.produitId === produitId); if (!x.panier || !l) return x;
-        const pr = x.etals.find((t) => t.id === x.panier!.etalId)!.produits.find((p) => p.id === produitId)!;
-        const prep = pr.preparations.find((p) => p.nom === nom)!; l.preparation = prep.nom; l.supplementKg = prep.supplementKg; return x;
+        const pr = x.etals.find((t) => t.id === etalId)!.produits.find((p) => p.id === produitId)!;
+        const piece = pr.pieces?.find((q) => q.id === pieceId); if (!piece) return x;
+        if (!x.panier || x.panier.etalId !== etalId) x.panier = { etalId, lignes: [] };
+        const deja = x.panier.lignes.find((l) => l.produitId === produitId && l.pieceId === pieceId);
+        if (deja) x.panier.lignes = x.panier.lignes.filter((l) => l !== deja);
+        else x.panier.lignes.push({ produitId, pieceId, espece: pr.espece, format: 'piece', kg: piece.poidsKg, prixKg: pr.prixKg, tete: 'avec',
+          preparation: pr.preparations[0]?.nom ?? 'Entier', supplementKg: pr.preparations[0]?.supplementKg ?? 0 });
+        if (!x.panier.lignes.length) x.panier = null;
+        return x;
       });
+    },
+    // Barquettes ou lots : nombre voulu
+    reglerNombre(etalId: string, produitId: string, n: number) {
+      maj((x) => {
+        const pr = x.etals.find((t) => t.id === etalId)!.produits.find((p) => p.id === produitId)!;
+        const max = pr.format === 'portion' ? pr.portion?.nombre ?? 0 : pr.lot?.nombre ?? 0;
+        n = Math.max(0, Math.min(max, Math.round(n)));
+        if (!x.panier || x.panier.etalId !== etalId) x.panier = { etalId, lignes: [] };
+        let l = x.panier.lignes.find((y) => y.produitId === produitId);
+        if (!l && n > 0) {
+          l = pr.format === 'portion'
+            ? { produitId, espece: pr.espece, format: 'portion', kg: 0, prixKg: pr.prixKg, preparation: pr.portion!.type, supplementKg: 0, nombre: 0, libelle: nomBarquette(pr.portion!) }
+            : { produitId, espece: pr.espece, format: 'lot', kg: 0, prixKg: 0, preparation: 'Lot', supplementKg: 0, nombre: 0, prixLot: pr.lot!.prix, libelle: nomLot(pr.lot!) };
+          x.panier.lignes.push(l);
+        }
+        if (l) { l.nombre = n; l.kg = pr.format === 'portion' ? Math.round(n * pr.portion!.poidsKg * 10) / 10 : pr.lot?.unite === 'kg' ? n * pr.lot.quantite : 0; }
+        x.panier.lignes = x.panier.lignes.filter((y) => y.kg > 0 || (y.nombre ?? 0) > 0);
+        if (!x.panier.lignes.length) x.panier = null;
+        return x;
+      });
+    },
+    choisirPreparation(cle: string, nom: string) {
+      maj((x) => {
+        const l = x.panier?.lignes.find((y) => cleLigne(y) === cle); if (!x.panier || !l) return x;
+        const pr = x.etals.find((t) => t.id === x.panier!.etalId)!.produits.find((p) => p.id === l.produitId)!;
+        const prep = pr.preparations.find((p) => p.nom === nom); if (!prep) return x;
+        l.preparation = prep.nom; l.supplementKg = prep.supplementKg; return x;
+      });
+    },
+    choisirTete(cle: string, tete: 'avec' | 'sans') {
+      maj((x) => { const l = x.panier?.lignes.find((y) => cleLigne(y) === cle); if (l) l.tete = tete; return x; });
     },
     viderPanier() { maj((x) => ({ ...x, panier: null })); },
     choisirCreneau(c: string) { maj((x) => ({ ...x, creneau: c })); },
@@ -285,11 +327,18 @@ function useMagasin() {
       maj((x) => {
         const et = x.etals.find((t) => t.id === x.panier!.etalId)!;
         const lignes = x.panier!.lignes;
-        lignes.forEach((l) => { const p = et.produits.find((q) => q.id === l.produitId)!; p.dispoKg = Math.round((p.dispoKg - l.kg) * 10) / 10; });
+        lignes.forEach((l) => {
+          const p = et.produits.find((q) => q.id === l.produitId)!;
+          if (p.format === 'piece') p.pieces = (p.pieces ?? []).filter((q) => q.id !== l.pieceId);
+          else if (p.format === 'portion' && p.portion) p.portion.nombre -= l.nombre ?? 0;
+          else if (p.format === 'lot' && p.lot) p.lot.nombre -= l.nombre ?? 0;
+          else p.dispoKg = Math.round((p.dispoKg - l.kg) * 10) / 10;
+          if (p.format !== 'kilo') p.dispoKg = Math.round(stockKg(p) * 10) / 10;
+        });
         const creneau = x.creneau && creneauxDe(et).includes(x.creneau) ? x.creneau : creneauxDe(et)[Math.min(1, creneauxDe(et).length - 1)];
         const totalKg = lignes.reduce((t, l) => t + l.kg, 0);
         const livraison = x.session?.pro && x.livraison && totalKg >= LIVRAISON_MIN_KG ? { adresse: x.session.pro.adresse || x.session.pro.raison + ', ' + x.session.pro.commune, frais: FRAIS_LIVRAISON } : undefined;
-        x.bons.push({ code, etalId: et.id, client: 'Vous', pro: x.session?.pro, livraison, lignes, creneau: livraison ? 'Livraison ' + creneau.toLowerCase() : creneau, statut: 'reserve', montantBloque: montantBloque(sousTotal(lignes)) + (livraison?.frais ?? 0), creeLe: x.horloge });
+        x.bons.push({ code, etalId: et.id, client: 'Vous', pro: x.session?.pro, livraison, lignes, creneau: livraison ? 'Livraison ' + creneau.toLowerCase() : creneau, statut: 'reserve', montantBloque: montantBloque(lignes, livraison?.frais ?? 0), creeLe: x.horloge });
         x.livraison = false;
         const id = et.id + '|Vous';
         x.convs[id] = x.convs[id] ?? { id, etalId: et.id, client: 'Vous', bon: code, messages: [], luClient: true, luPecheur: false };
@@ -424,7 +473,7 @@ function useMagasin() {
     },
 
     // ───────── Espace pêcheur ─────────
-    async publierArrivage(etalId: string, lignes: { espece: string; prixKg: number; dispoKg: number; preparations: { nom: string; supplementKg: number }[] }[], photo?: { uri: string; type?: string }): Promise<boolean> {
+    async publierArrivage(etalId: string, lignes: Omit<Produit, 'id'>[], photo?: { uri: string; type?: string }): Promise<boolean> {
       if (!MODE_DEMO) {
         try {
           const url = photo ? await B.envoyerPhoto(etalId, photo.uri, photo.type) : undefined;
@@ -433,7 +482,7 @@ function useMagasin() {
       }
       maj((x) => {
         const et = x.etals.find((t) => t.id === etalId)!;
-        et.produits = lignes.filter((l) => l.dispoKg > 0).map((l, i) => ({ id: etalId + '-' + i + '-' + Date.now(), espece: l.espece, prixKg: l.prixKg, dispoKg: l.dispoKg, preparations: l.preparations }));
+        et.produits = lignes.map((l, i) => { const p = { ...l, id: etalId + '-' + i + '-' + Date.now() } as Produit; if (p.format !== 'kilo') p.dispoKg = Math.round(stockKg(p) * 10) / 10; return p; }).filter(disponible);
         if (photo) et.photo = photo.uri;
         et.debarque = x.horloge; return x;
       });
@@ -443,8 +492,8 @@ function useMagasin() {
       if (!MODE_DEMO) { try { await B.validerPesee(code, poids, preuve); await recharger(); return true; } catch (err) { erreur(err); return false; } }
       maj((x) => {
         const b = x.bons.find((y) => y.code === code)!;
-        b.lignes.forEach((l, i) => (l.kg = poids[i]));
-        b.montantPaye = Math.round((sousTotal(b.lignes) + FRAIS_SERVICE + (b.livraison?.frais ?? 0)) * 100) / 100;
+        b.lignes.forEach((l, i) => { if (l.format === 'lot') l.nombre = poids[i]; else l.kg = poids[i]; });
+        b.montantPaye = montantPaye(b.lignes, b.livraison?.frais ?? 0);
         b.statut = 'retire'; if (b.pro) b.facture = 'FA-DEMO-' + code.replace('R-', '').padStart(6, '0'); return x;
       });
       return true;
@@ -470,8 +519,10 @@ function useMagasin() {
     frais: (t: Etal) => e.horloge - t.debarque >= 0 && e.horloge - t.debarque < 60,
     depuis: (t: Etal) => { const d = e.horloge - t.debarque; if (d < 0 || d > 20 * 60) return 'hier ou avant'; return d < 60 ? 'il y a ' + d + ' min' : 'il y a ' + Math.floor(d / 60) + ' h' + (d % 60 ? ' ' + String(d % 60).padStart(2, '0') : ''); },
     km: (t: Etal) => distanceKm(PORTS[e.commune] ?? PORTS['Le Robert'], PORTS[t.port] ?? PORTS['Le Robert']),
-    minPrix: (t: Etal) => { const d = t.produits.filter((p) => p.dispoKg > 0); return d.length ? Math.min(...d.map((p) => p.prixKg)) : null; },
+    minPrix: (t: Etal) => { const d = t.produits.filter((p) => disponible(p) && p.format !== 'lot'); return d.length ? Math.min(...d.map((p) => p.prixKg)) : null; },
     kgPanier: (etalId: string, produitId: string) => (e.panier?.etalId === etalId ? e.panier.lignes.find((l) => l.produitId === produitId)?.kg ?? 0 : 0),
+    nombrePanier: (etalId: string, produitId: string) => (e.panier?.etalId === etalId ? e.panier.lignes.find((l) => l.produitId === produitId)?.nombre ?? 0 : 0),
+    pieceDansPanier: (etalId: string, produitId: string, pieceId: string) => !!(e.panier?.etalId === etalId && e.panier.lignes.some((l) => l.produitId === produitId && l.pieceId === pieceId)),
     creneaux: creneauxDe,
     mesBons: () => e.bons.filter((b) => b.client === 'Vous').slice().reverse(),
     mesDemandes: () => e.demandes.filter((d) => d.auteur === 'Vous'),
@@ -480,7 +531,7 @@ function useMagasin() {
     bonsPecheur: (etalId?: string) => e.bons.filter((b) => b.etalId === etalId && b.statut !== 'a_payer'),
     nonLusClient: () => Object.values(e.convs).filter((c) => c.client === 'Vous' && !c.luClient).length,
     nonLusPecheur: (etalId?: string) => Object.values(e.convs).filter((c) => c.etalId === etalId && !c.luPecheur).length,
-    resume: (lignes: LignePanier[]) => lignes.map((l) => l.espece + ' ' + kg(l.kg)).join(', '),
+    resume: (lignes: LignePanier[]) => lignes.map(libelleLigne).join(', '),
   }), [e]);
 
   return { e, pret, ...actions, ...sel };

@@ -83,3 +83,38 @@ test('SIRET : clé de contrôle (Luhn), exception La Poste', () => {
   assert.equal(siretValide('35600000000010'), true, 'La Poste');
   assert.equal(siretValide('1234567890001'), false);
 });
+
+// ───────── Formats de vente ─────────
+import { appliquerPesee, prendre, produitValide, rendre, rienRemis, type Produit } from '../formats';
+test('formats : un produit valide par format, rien à vendre = ignoré', () => {
+  assert.equal(produitValide({ format: 'kilo', prixKg: 14, dispoKg: 0 }, 'Thon jaune'), null);
+  const piece = produitValide({ format: 'piece', prixKg: 13, pieces: [{ poidsKg: 3.2 }, { poidsKg: 4 }] }, 'Dorade coryphène')!;
+  assert.equal(piece.dispoKg, 7.2); assert.equal(piece.pieces!.length, 2); assert.notEqual(piece.pieces![0].id, piece.pieces![1].id);
+  assert.throws(() => produitValide({ format: 'piece', prixKg: 13, pieces: [{ poidsKg: 900 }] }, 'Thazard'), /invalide/);
+  assert.throws(() => produitValide({ format: 'portion', prixKg: 19, portion: { type: 'Autre', poidsKg: 0.5, nombre: 2 } }, 'Thazard'), /Barquettes invalides/);
+  assert.throws(() => produitValide({ format: 'lot', lot: { quantite: 1.5, unite: 'pièces', prix: 10, nombre: 2 } }, 'Lambi'), /Lot invalide/);
+  assert.deepEqual(produitValide({ format: 'lot', lot: { quantite: 1, unite: 'kg', prix: 25, nombre: 4 } }, 'Lambi')!.lot, { quantite: 1, unite: 'kg', prix: 25, nombre: 4 });
+});
+test('formats : prendre puis rendre remet exactement le stock', () => {
+  const ps: Produit[] = [
+    { id: 'a', espece: 'Dorade coryphène', format: 'piece', prixKg: 13, dispoKg: 7.2, teteAuChoix: true, preparations: [{ nom: 'Entière', supplementKg: 0 }], pieces: [{ id: 'x', poidsKg: 3.2 }, { id: 'y', poidsKg: 4 }] },
+    { id: 'b', espece: 'Dorade coryphène', format: 'portion', prixKg: 19, dispoKg: 3, preparations: [], portion: { type: 'Filets', poidsKg: 0.5, nombre: 6 } },
+    { id: 'c', espece: 'Lambi', format: 'lot', prixKg: 0, dispoKg: 4, preparations: [], lot: { quantite: 1, unite: 'kg', prix: 25, nombre: 4 } },
+  ];
+  const copie: Produit[] = JSON.parse(JSON.stringify(ps));
+  const lignes = [prendre(copie[0], { pieceId: 'y', tete: 'sans' }), prendre(copie[1], { nombre: 2 }), prendre(copie[2], { nombre: 1 })];
+  assert.equal(lignes[0].kg, 4); assert.equal(lignes[0].tete, 'sans'); assert.equal(lignes[1].kg, 1); assert.equal(lignes[2].kg, 1);
+  assert.equal(copie[0].dispoKg, 3.2); assert.equal(copie[1].portion!.nombre, 4); assert.equal(copie[2].lot!.nombre, 3);
+  assert.throws(() => prendre(copie[0], { pieceId: 'y' }), /vient d’être réservé/);
+  assert.throws(() => prendre(copie[2], { nombre: 9 }), /Plus assez de lambi/);
+  assert.equal(montantBloque(r, lignes), 104); // (52 + 19) × 1,1 + 25 € de lot + 0,90 (sans tête : même prix)
+  const rendus = rendre(copie, lignes);
+  assert.deepEqual(rendus.map((p) => p.dispoKg), [7.2, 3, 4]);
+  assert.equal(rendus[0].pieces!.length, 2); assert.equal(rendus[1].portion!.nombre, 6); assert.equal(rendus[2].lot!.nombre, 4);
+});
+test('formats : pesée (lots au nombre remis, jamais plus)', () => {
+  const l = [prendre({ id: 'c', espece: 'Poisson volant', format: 'lot', prixKg: 0, dispoKg: 0, preparations: [], lot: { quantite: 10, unite: 'pièces', prix: 10, nombre: 5 } }, { nombre: 2 })];
+  assert.equal(montantsPesee(r, appliquerPesee(l, [1])).total, 10.9);
+  assert.throws(() => appliquerPesee(l, [3]), /Plus de lots/);
+  assert.equal(rienRemis(appliquerPesee(l, [0])), true);
+});

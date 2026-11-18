@@ -6,6 +6,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Chip, Logo, Prix, T } from '../../src/components/ui';
 import { FILTRES, PORTS } from '../../src/data/demo';
 import { distanceKm, euro, heure } from '../../src/format';
+import { disponible } from '../../src/formats';
 import { useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -16,7 +17,7 @@ export default function Carte() {
   const [port, setPort] = useState(app.e.commune);
 
   const garde = (portNom: string) => app.e.etals.filter((e) => e.port === portNom && e.produits.length > 0 && (
-    filtre === 'Tout' ? true : filtre === 'Moins d’1 h' ? app.frais(e) : e.produits.some((p) => p.espece.startsWith(filtre) && p.dispoKg > 0)));
+    filtre === 'Tout' ? true : filtre === 'Moins d’1 h' ? app.frais(e) : e.produits.some((p) => p.espece.startsWith(filtre) && disponible(p))));
   const etalsPort = garde(port);
 
 

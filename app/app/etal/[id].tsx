@@ -4,7 +4,8 @@ import { Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcVerrou } from '../../src/components/icones';
 import { Bouton, Chip, Feuille, Pastille, Prix, Rond, Stepper, T, Vide, s } from '../../src/components/ui';
-import { euro, heure, kg, sousTotal } from '../../src/format';
+import { euro, heure, kg } from '../../src/format';
+import { disponible, offre, sousTotal } from '../../src/formats';
 import { useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -18,9 +19,9 @@ export default function EtalEcran() {
   const autre = app.e.panier && app.e.panier.etalId !== e.id;
   const nb = app.e.panier?.etalId === e.id ? app.e.panier.lignes.length : 0;
   const pro = !!app.e.session?.pro;
-  const pas = (produitId: string, signe: 1 | -1) => {
+  const pas = (produitId: string, signe: 1 | -1, pasKg = 0.5) => {
     const q = app.kgPanier(e.id, produitId);
-    app.reglerKg(e.id, produitId, q === 0 && signe > 0 ? 1 : q + (pro ? 1 : 0.5) * signe);
+    app.reglerKg(e.id, produitId, q === 0 && signe > 0 ? 1 : q + (pro ? Math.max(1, pasKg) : pasKg) * signe);
   };
   const prodReglage = reglage ? e.produits.find((p) => p.id === reglage.produitId) : undefined;
 
@@ -52,25 +53,48 @@ export default function EtalEcran() {
           </View>
         ) : null}
         {e.produits.map((p) => {
-          const q = app.kgPanier(e.id, p.id), dispo = p.dispoKg > 0;
-          const prep = p.preparations.length > 1 ? p.preparations[0].nom + ' ou ' + p.preparations[1].nom.toLowerCase() + ' (+' + p.preparations[1].supplementKg + ' €/kg)' : p.preparations[0].nom;
+          const dispo = disponible(p), o = offre(p);
+          const plus = (label: string, onPress: () => void) => (
+            <Pressable accessibilityLabel={label} onPress={onPress} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center' }}>
+              <T tresGras style={{ color: '#fff', fontSize: 20 }}>+</T>
+            </Pressable>
+          );
+          let action: React.ReactNode = null;
+          if (dispo && !autre) {
+            if (p.format === 'kilo') {
+              const q = app.kgPanier(e.id, p.id);
+              action = q ? <Stepper valeur={kg(q)} onMoins={() => pas(p.id, -1, p.pasKg)} onPlus={() => pas(p.id, 1, p.pasKg)} onValeur={() => setReglage({ produitId: p.id, kg: q })} />
+                : plus('Ajouter ' + p.espece, () => pas(p.id, 1, p.pasKg));
+            } else if (p.format === 'portion' || p.format === 'lot') {
+              const n = app.nombrePanier(e.id, p.id);
+              action = n ? <Stepper valeur={String(n)} onMoins={() => app.reglerNombre(e.id, p.id, n - 1)} onPlus={() => app.reglerNombre(e.id, p.id, n + 1)} />
+                : plus('Ajouter ' + p.espece + (p.format === 'portion' ? ' en barquette' : ' en lot'), () => app.reglerNombre(e.id, p.id, 1));
+            }
+          }
           return (
-            <View key={p.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: c.ligne, opacity: dispo ? 1 : 0.5 }}>
-              <View style={{ flex: 1, gap: 3 }}>
-                <T tresGras style={{ fontSize: 16 }}>{p.espece}</T>
-                <T gris petit>{prep}</T>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Prix texte={euro(p.prixKg) + '/kg'} />
-                  <T petit style={{ color: !dispo || p.dispoKg <= 4 ? c.alerte : c.vert }}>{!dispo ? 'épuisé' : p.dispoKg <= 4 ? 'plus que ' + kg(p.dispoKg) : kg(p.dispoKg) + ' dispo'}</T>
+            <View key={p.id} style={{ paddingHorizontal: 16, paddingVertical: 14, borderTopWidth: 1, borderTopColor: c.ligne, gap: 10, opacity: dispo ? 1 : 0.5 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ flex: 1, gap: 3 }}>
+                  <T tresGras style={{ fontSize: 16 }}>{p.espece}{p.format === 'portion' && p.portion ? ' · ' + p.portion.type.toLowerCase() : ''}</T>
+                  <T gris petit>{o.detail}</T>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                    <Prix texte={o.prix} />
+                    <T petit style={{ color: !dispo ? c.alerte : c.vert }}>{!dispo ? 'épuisé' : o.reste + ' dispo'}</T>
+                  </View>
                 </View>
+                {action}
               </View>
-              {!dispo || autre ? null : q ? (
-                <Stepper valeur={kg(q)} onMoins={() => pas(p.id, -1)} onPlus={() => pas(p.id, 1)} onValeur={() => setReglage({ produitId: p.id, kg: q })} />
-              ) : (
-                <Pressable accessibilityLabel={'Ajouter ' + p.espece} onPress={() => pas(p.id, 1)} style={{ width: 42, height: 42, borderRadius: 21, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center' }}>
-                  <T tresGras style={{ color: '#fff', fontSize: 20 }}>+</T>
-                </Pressable>
-              )}
+              {p.format === 'piece' && dispo && !autre ? (
+                <View style={{ gap: 6 }}>
+                  <T gris petit>Choisissez votre poisson (poids approximatif) :</T>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                    {(p.pieces ?? []).map((x) => {
+                      const pris = app.pieceDansPanier(e.id, p.id, x.id);
+                      return <Chip key={x.id} titre={(pris ? '✓ ' : '') + '~' + kg(x.poidsKg) + ' · ≈ ' + euro(x.poidsKg * p.prixKg)} actif={pris} onPress={() => app.basculerPiece(e.id, p.id, x.id)} />;
+                    })}
+                  </View>
+                </View>
+              ) : null}
             </View>
           );
         })}

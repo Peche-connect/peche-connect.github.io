@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, Chip, EnTete, Feuille, Ligne, T, Vide } from '../src/components/ui';
-import { euro, FRAIS_LIVRAISON, FRAIS_SERVICE, kg, LIVRAISON_MIN_KG, montantBloque, sousTotal } from '../src/format';
+import { euro, FRAIS_LIVRAISON, FRAIS_SERVICE, LIVRAISON_MIN_KG } from '../src/format';
+import { cleLigne, libelleLigne, montantBloque, pesable, sousTotal, valeur } from '../src/formats';
 import { MODE_DEMO, useApp } from '../src/store';
 import { couleurs as c } from '../src/theme';
 
@@ -25,7 +26,8 @@ export default function PanierEcran() {
   const totalKg = p.lignes.reduce((t, l) => t + l.kg, 0);
   const livraisonPossible = !!pro && totalKg >= LIVRAISON_MIN_KG;
   const livrer = livraisonPossible && app.e.livraison;
-  const st = sousTotal(p.lignes), bloque = montantBloque(st) + (livrer ? FRAIS_LIVRAISON : 0);
+  const st = sousTotal(p.lignes), bloque = montantBloque(p.lignes, livrer ? FRAIS_LIVRAISON : 0);
+  const aPeser = p.lignes.some(pesable);
 
   const reserver = () => {
     setEnvoi(true);
@@ -48,17 +50,25 @@ export default function PanierEcran() {
         </View>
         {p.lignes.map((l) => {
           const pr = e.produits.find((x) => x.id === l.produitId)!;
+          const cle = cleLigne(l);
           return (
-            <View key={l.produitId} style={{ padding: 16, gap: 8, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                <T tresGras>{l.espece} · {kg(l.kg)}</T>
-                <T tresGras>{euro(l.kg * (l.prixKg + l.supplementKg))}</T>
+            <View key={cle} style={{ padding: 16, gap: 8, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}>
+                <T tresGras style={{ flex: 1 }}>{libelleLigne(l)}</T>
+                <T tresGras>{(pesable(l) ? '≈ ' : '') + euro(valeur(l))}</T>
               </View>
-              {pr.preparations.length > 1 ? (
+              {l.format === 'piece' && pr.teteAuChoix ? (
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                  {pr.preparations.map((pp) => <Chip key={pp.nom} titre={pp.nom + (pp.supplementKg ? ' +' + pp.supplementKg + ' €' : '')} actif={l.preparation === pp.nom} onPress={() => app.choisirPreparation(l.produitId, pp.nom)} />)}
+                  <Chip titre="Avec la tête" actif={l.tete !== 'sans'} onPress={() => app.choisirTete(cle, 'avec')} />
+                  <Chip titre="Sans la tête" actif={l.tete === 'sans'} onPress={() => app.choisirTete(cle, 'sans')} />
                 </View>
-              ) : <T gris petit>{l.preparation}</T>}
+              ) : null}
+              {(l.format === 'kilo' || l.format === 'piece' || !l.format) && pr.preparations.length > 1 ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                  {pr.preparations.map((pp) => <Chip key={pp.nom} titre={pp.nom + (pp.supplementKg ? ' +' + pp.supplementKg + ' €/kg' : '')} actif={l.preparation === pp.nom} onPress={() => app.choisirPreparation(cle, pp.nom)} />)}
+                </View>
+              ) : <T gris petit>{l.format === 'lot' ? 'Prix fixe, sans pesée' : l.format === 'portion' ? 'Déjà préparé, payé au poids réel' : l.preparation}</T>}
+              {l.format === 'piece' ? <T gris petit>Poids approximatif : vous payez le poids réel à la pesée.</T> : null}
             </View>
           );
         })}
@@ -88,12 +98,12 @@ export default function PanierEcran() {
             <T tresGras>Modifier</T>
           </Pressable>
           <View style={{ gap: 6 }}>
-            <Ligne2 a="Sous-total estimé" b={euro(st)} />
+            <Ligne2 a={aPeser ? 'Sous-total estimé' : 'Sous-total'} b={euro(st)} />
             <Ligne2 a="Frais de service" b={euro(FRAIS_SERVICE)} />
             {livrer ? <Ligne2 a="Livraison par chauffeur" b={euro(FRAIS_LIVRAISON)} /> : null}
             <Ligne style={{ marginVertical: 4 }} />
             <Ligne2 a="Montant bloqué sur la carte" b={euro(bloque)} fort />
-            <T gris petit>Vous ne payez que le poids réel, pesé devant vous au retrait. Le reste est libéré aussitôt.</T>
+            <T gris petit>{aPeser ? 'Vous ne payez que le poids réel, pesé devant vous au retrait. Le reste est libéré aussitôt.' : 'Lots à prix fixe : ce montant sera encaissé au retrait.'}</T>
           </View>
         </View>
       </ScrollView>

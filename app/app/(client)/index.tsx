@@ -6,6 +6,7 @@ import { CarteEtal } from '../../src/components/CarteEtal';
 import { IcCompte, IcLoupe } from '../../src/components/icones';
 import { Chip, Feuille, Logo, Rond, T, Vide } from '../../src/components/ui';
 import { FILTRES, PORTS } from '../../src/data/demo';
+import { disponible } from '../../src/formats';
 import { useApp } from '../../src/store';
 import { couleurs as c, polices as f } from '../../src/theme';
 
@@ -17,7 +18,7 @@ export default function Accueil() {
 
   const liste = useMemo(() => app.e.etals.filter((e) => {
     if (filtre === 'Moins d’1 h' && !app.frais(e)) return false;
-    if (filtre !== 'Tout' && filtre !== 'Moins d’1 h' && !e.produits.some((p) => p.espece.startsWith(filtre) && p.dispoKg > 0)) return false;
+    if (filtre !== 'Tout' && filtre !== 'Moins d’1 h' && !e.produits.some((p) => p.espece.startsWith(filtre) && disponible(p))) return false;
     const t = q.trim().toLowerCase();
     if (t && !(e.pecheur + ' ' + e.port + ' ' + e.produits.map((p) => p.espece).join(' ')).toLowerCase().includes(t)) return false;
     return e.produits.length > 0;

@@ -3,7 +3,11 @@ import { useEffect, useState } from 'react';
 import { ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Bouton, EnTete, Ligne, Stepper, T, Vide } from '../../src/components/ui';
-import { euro, FRAIS_SERVICE, kg, sousTotal } from '../../src/format';
+import { euro, kg } from '../../src/format';
+import { cleLigne, libelleLigne, montantPaye } from '../../src/formats';
+import type { LignePanier } from '../../src/types';
+// valeur saisie à la pesée : le poids réel, ou le nombre de lots remis (prix fixe)
+const depart = (l: LignePanier) => (l.format === 'lot' ? l.nombre ?? 1 : l.kg);
 import { useApp } from '../../src/store';
 import { couleurs as c, polices as f } from '../../src/theme';
 
@@ -13,19 +17,19 @@ export default function Pesee() {
   const { code, s: signature } = useLocalSearchParams<{ code: string; s?: string }>();
   const app = useApp();
   const b = app.e.bons.find((x) => x.code === code);
-  const [poids, setPoids] = useState<number[]>(b ? b.lignes.map((l) => l.kg) : []);
+  const [poids, setPoids] = useState<number[]>(b ? b.lignes.map(depart) : []);
   const [qr, setQr] = useState<{ ok: boolean; message: string } | null>(null);
   const [envoi, setEnvoi] = useState(false);
   const [pin, setPin] = useState('');
   const preuve = signature || pin;
-  useEffect(() => { if (b && poids.length !== b.lignes.length) setPoids(b.lignes.map((l) => l.kg)); }, [b?.lignes.length]);
+  useEffect(() => { if (b && poids.length !== b.lignes.length) setPoids(b.lignes.map(depart)); }, [b?.lignes.length]);
   useEffect(() => { if (signature && code) app.verifierQr(code, signature).then(setQr); }, [code, signature]);
   // sans QR : le client dicte son code de retrait (6 chiffres), vérifié par le serveur
   useEffect(() => { if (!signature && code) { if (pin.length === 6) app.verifierQr(code, pin).then(setQr); else setQr(null); } }, [pin]);
   if (app.e.session?.role !== 'pecheur') return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Pesée" /><Vide titre="Réservé au pêcheur" texte="Ce QR code se scanne depuis l’espace pêcheur de Pêche Connect." /></SafeAreaView>;
   if (!b) return <SafeAreaView style={{ flex: 1 }}><EnTete titre="Pesée" /><Vide titre="Bon introuvable" texte={qr && !qr.ok ? qr.message : 'Ce bon n’est pas pour votre étal. Revenez aux réservations.'} /></SafeAreaView>;
-  const lignesPesees = b.lignes.map((l, i) => ({ ...l, kg: poids[i] ?? l.kg }));
-  const montant = Math.round((sousTotal(lignesPesees) + FRAIS_SERVICE + (b.livraison?.frais ?? 0)) * 100) / 100;
+  const lignesPesees = b.lignes.map((l, i) => (l.format === 'lot' ? { ...l, nombre: poids[i] ?? l.nombre } : { ...l, kg: poids[i] ?? l.kg }));
+  const montant = montantPaye(lignesPesees, b.livraison?.frais ?? 0);
   const trop = montant > b.montantBloque + 0.001;
 
   return (
@@ -45,16 +49,25 @@ export default function Pesee() {
           <Vide titre="Vente clôturée" texte={'Encaissé : ' + euro(b.montantPaye ?? 0) + '. Le reste de l’empreinte a été libéré.'} />
         ) : (
           <>
-            {b.lignes.map((l, i) => (
-              <View key={l.produitId} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
-                <View style={{ flex: 1 }}><T tresGras style={{ fontSize: 16 }}>{l.espece}</T><T gris petit>Réservé {kg(l.kg)} · {l.preparation.toLowerCase()} · {euro(l.prixKg + l.supplementKg)}/kg</T></View>
-                <Stepper valeur={kg(poids[i])} onMoins={() => setPoids((p) => p.map((x, j) => (j === i ? Math.max(0, Math.round((x - 0.1) * 10) / 10) : x)))} onPlus={() => setPoids((p) => p.map((x, j) => (j === i ? Math.round((x + 0.1) * 10) / 10 : x)))} />
-              </View>
-            ))}
+            {b.lignes.map((l, i) => {
+              const lot = l.format === 'lot';
+              const detail = lot ? 'Prix fixe · ' + euro(l.prixLot ?? 0) + ' le lot (pas de pesée)'
+                : 'Réservé ~' + kg(l.kg) + (l.format === 'kilo' || !l.format ? ' · ' + l.preparation.toLowerCase() : '') + ' · ' + euro(l.prixKg + l.supplementKg) + '/kg';
+              return (
+                <View key={cleLigne(l)} style={{ flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
+                  <View style={{ flex: 1 }}><T tresGras style={{ fontSize: 16 }}>{libelleLigne(l)}</T><T gris petit>{detail}</T></View>
+                  {lot ? (
+                    <Stepper valeur={String(poids[i]) + ' lot' + ((poids[i] ?? 0) > 1 ? 's' : '')} onMoins={() => setPoids((p) => p.map((x, j) => (j === i ? Math.max(0, x - 1) : x)))} onPlus={() => setPoids((p) => p.map((x, j) => (j === i ? Math.min(l.nombre ?? 1, x + 1) : x)))} />
+                  ) : (
+                    <Stepper valeur={kg(poids[i])} onMoins={() => setPoids((p) => p.map((x, j) => (j === i ? Math.max(0, Math.round((x - 0.1) * 10) / 10) : x)))} onPlus={() => setPoids((p) => p.map((x, j) => (j === i ? Math.round((x + 0.1) * 10) / 10 : x)))} />
+                  )}
+                </View>
+              );
+            })}
             <View style={{ padding: 16, gap: 8 }}>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T>Montant bloqué (max)</T><T>{euro(b.montantBloque)}</T></View>
               <Ligne />
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T tresGras>À encaisser (poids réel + frais)</T><T tresGras>{euro(montant)}</T></View>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T tresGras>À encaisser (réel + frais)</T><T tresGras>{euro(montant)}</T></View>
               {trop ? <T gras style={{ color: c.alerte }}>Au-delà du montant bloqué : retirez un peu de poisson ou demandez au client de valider le supplément.</T> : <T gris petit>Le client voit le poids et le montant s’afficher sur son bon.</T>}
             </View>
           </>
