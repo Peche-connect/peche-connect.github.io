@@ -82,7 +82,13 @@ enregistrements MX, SPF et DKIM que Zoho affiche → créer `contact@peche-conne
 ## 7. Premiers pêcheurs
 
 - Un pêcheur s'inscrit dans l'appli (rôle « Pêcheur ») : son étal apparaît dans **Firestore > etals**
-  avec `statut = en_attente`. Après contrôle de son immatriculation : mettre `statut` à **`verifie`**.
+  avec `statut = en_attente`. Son **numéro de marin** est dans `etals/<id>/verification/dossier`
+  (jamais visible des clients). Le vérifier en interne (aucun service public ne peut être interrogé
+  automatiquement), avec l'immatriculation du bateau (`etals/<id>/prive/infos`). Si tout est bon : mettre
+  `numeroVerifie` à `true` dans le dossier, puis `statut` à **`verifie`** sur l'étal. Ajouter aussi dans
+  `prive/infos` son `nomLegal` et son `siret` (pour les factures).
+- S'il change ensuite de bateau, d'immatriculation, de port ou de numéro de marin, il repasse tout seul
+  en `en_attente` : refaire la vérification.
 - Il ouvre ensuite son compte de paiement Stripe depuis l'appli ; Stripe prévient le serveur quand c'est prêt.
 - Montants : **Firestore > reglages > general** (créer le document si besoin : `fraisService`,
   `commissionPct`, `margeEmpreinte`, `livraisonMinKg`, `fraisLivraison`). Sans document : 0,90 € de frais,
