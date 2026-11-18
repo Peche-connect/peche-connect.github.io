@@ -88,5 +88,5 @@ jobs:
           npx -y firebase-tools@14 emulators:exec --project demo-peche-connect --only auth,firestore,storage,functions "npm --prefix tests run parcours"
       - name: Captures d'écran du parcours
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with: { name: captures-parcours, path: /tmp/captures, if-no-files-found: ignore }
