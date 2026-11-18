@@ -179,6 +179,7 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
       exporte_le: new Date().toISOString(), compte: { id: uid, email: req.auth?.token.email ?? null },
       profil: profil.data() ?? null, professionnel: pro.data() ?? null,
       etal: etal ? { ...etal.data(), prive: prive?.data() ?? null, verification: (await etal.ref.collection('verification').doc('dossier').get()).data() ?? null } : null,
+      reservations_avant_sortie: (await db.collection('precommandes').where('clientId', '==', uid).get()).docs.map((p) => p.data()),
       bons: bons.docs.map((b) => b.data()), conversations: await Promise.all(convs.docs.map(messagesDe)), besoins: demandes.docs.map((d) => d.data()),
       ventes: bonsEtal?.docs.map((b) => b.data()) ?? [], conversations_pecheur: convsEtal ? await Promise.all(convsEtal.docs.map(messagesDe)) : [],
       factures: [...facturesAchat.docs, ...facturesVente.docs].map((f) => f.data()),
@@ -213,6 +214,11 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
     await getStorage().bucket().deleteFiles({ prefix: 'messages-audio/' + c.id + '/' }).catch(() => {});
     await db.recursiveDelete(c.ref);
   }
+  // réservations avant sortie : celles en attente sont annulées, toutes détachées de la personne
+  for (const p of (await db.collection('precommandes').where('clientId', '==', uid).get()).docs) {
+    await p.ref.update({ clientId: null, clientPrenom: 'Compte supprimé', ...(p.data().statut === 'en_attente' ? { statut: 'annulee' } : {}) });
+  }
+  if (etal) await db.doc('sorties/' + etal.id).delete().catch(() => {});
   const demandes = await db.collection('demandes').where('proId', '==', uid).get();
   await Promise.all(demandes.docs.map((d) => (d.data().statut === 'ouverte' ? d.ref.update({ statut: 'annulee' }) : null)));
   if (etal) {

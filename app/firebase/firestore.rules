@@ -18,6 +18,9 @@ service cloud.firestore {
     match /reglages/{doc} { allow read: if doc != 'equipe'; }
     // avis : publics (prénom, note, commentaire, date), écrits seulement par le serveur
     match /avis/{code} { allow read: if true; }
+    // sorties annoncées : publiques ; réservations avant sortie : le client et le pêcheur concernés
+    match /sorties/{etal} { allow read: if true; }
+    match /precommandes/{id} { allow read: if connecte() && (resource.data.clientId == moi() || resource.data.etalId == moi()); }
     match /fermetures/{doc} { allow read: if true; }
 
     // Profil : chacun lit le sien ; il peut changer son prénom, sa commune et ses alertes, jamais son

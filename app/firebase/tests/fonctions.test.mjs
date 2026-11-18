@@ -343,6 +343,57 @@ describe('Formats de vente (kilo, pièce, barquettes, lot)', () => {
   });
 });
 
+describe('Réservations avant la sortie', () => {
+  const dans = (h) => new Date(Date.now() + h * 3600_000).toISOString();
+  const annonce = (thonMax = 5) => appeler('pecheur', 'annoncerSortie', { retour: dans(3), especes: [
+    { espece: 'Thon jaune', prixKg: 14, kgMax: thonMax }, { espece: 'Dorade coryphène', prixKg: 13, kgMax: 4 }, { espece: 'Colas', prixKg: 15, kgMax: 3 }] });
+  let pThon;
+  test('le pêcheur annonce sa sortie ; les clients réservent sans payer', async () => {
+    await assert.rejects(appeler('pecheur', 'annoncerSortie', { retour: dans(100), especes: [{ espece: 'Thon jaune', prixKg: 14, kgMax: 5 }] }), /48 heures/);
+    await assert.rejects(appeler('client', 'annoncerSortie', { retour: dans(3), especes: [{ espece: 'Thon jaune', prixKg: 14, kgMax: 5 }] }), /pêcheurs vérifiés/);
+    await annonce();
+    assert.equal((await lire('sorties/' + etalId)).statut, 'annoncee');
+    pThon = (await appeler('client', 'precommander', { etalId, espece: 'Thon jaune', kg: 3 })).id;
+    await appeler('client', 'precommander', { etalId, espece: 'Dorade coryphène', kg: 2 });
+    await assert.rejects(appeler('autre', 'precommander', { etalId, espece: 'Thon jaune', kg: 3 }), /Plus que 2 kg/);
+    await appeler('autre', 'precommander', { etalId, espece: 'Thon jaune', kg: 2 });
+    await appeler('autre', 'precommander', { etalId, espece: 'Colas', kg: 2 });
+    await assert.rejects(appeler('client', 'precommander', { etalId, espece: 'Thon jaune', kg: 1 }), /déjà réservé/);
+    await assert.rejects(appeler('client', 'precommander', { etalId, espece: 'Langouste', kg: 1 }), /non annoncée/);
+    await assert.rejects(annonce(4), /déjà réservés/);
+    assert.equal((await lire('sorties/' + etalId)).reserveKg['Thon jaune'], 5);
+  });
+  test('au retour, l’arrivage transforme les réservations en bons à payer, dans l’ordre', async () => {
+    const r = await appeler('pecheur', 'publierArrivage', { lignes: [
+      { espece: 'Thon jaune', prixKg: 14, dispoKg: 10, preparations: [{ nom: 'Entier', supplementKg: 0 }, { nom: 'En tranches', supplementKg: 2 }] },
+      { espece: 'Dorade coryphène', format: 'piece', prixKg: 13, pieces: [{ poidsKg: 4 }] },
+      { espece: 'Colas', prixKg: 15, dispoKg: 1, preparations: [{ nom: 'Entier', supplementKg: 0 }] }] });
+    assert.equal(r.converties, 3); assert.equal(r.nonServies, 1);
+    const p = await lire('precommandes/' + pThon);
+    assert.equal(p.statut, 'convertie');
+    const b = await lire('bons/' + p.bonCode);
+    assert.equal(b.origine, 'sortie'); assert.equal(b.statut, 'en_attente_paiement'); assert.equal(b.clientId, comptes.client.uid); assert.equal(b.lignes[0].kg, 3);
+    assert.equal(b.montantBloque, 47.1, '3 × 14 × 1,1 + 0,90');
+    const autres = (await db.collection('precommandes').where('etalId', '==', etalId).get()).docs.map((d) => d.data());
+    assert.equal(autres.find((x) => x.espece === 'Colas').kgServi, 1, 'servi en partie : 1 kg sur 2');
+    assert.match(autres.find((x) => x.espece === 'Dorade coryphène').raison, /vendu autrement/);
+    const etal = await lire('etals/' + etalId);
+    assert.equal(etal.produits[0].dispoKg, 5); assert.equal(etal.produits[2].dispoKg, 0);
+    assert.equal((await lire('sorties/' + etalId)).statut, 'rentree');
+    await assert.rejects(appeler('client', 'precommander', { etalId, espece: 'Thon jaune', kg: 1 }), /plus ouverte/);
+    // le client paie son bon dans l'heure, comme une commande acceptée
+    const { url } = await appeler('client', 'payerBon', { code: p.bonCode });
+    assert.ok(url);
+  });
+  test('sortie annulée : les réservations sont libérées', async () => {
+    await annonce();
+    const { id } = await appeler('autre', 'precommander', { etalId, espece: 'Thon jaune', kg: 1 });
+    await appeler('pecheur', 'annulerSortie', { motif: 'mauvais temps' });
+    assert.equal((await lire('precommandes/' + id)).statut, 'non_servie');
+    assert.equal((await lire('sorties/' + etalId)).statut, 'annulee');
+  });
+});
+
 describe('Tâches automatiques', () => {
   test('positions expirées effacées, paiements abandonnés remis en vente', async () => {
     const conv = etalId + '_' + comptes.client.uid;
@@ -453,7 +504,8 @@ describe('Espace équipe', () => {
 describe('Mon compte (RGPD)', () => {
   test('télécharger mes données', async () => {
     const d = await appeler('client', 'compte', { action: 'exporter' });
-    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 2); assert.ok(d.conversations[0].messages.length >= 2); // thon au kilo + commande « formats »
+    assert.equal(d.profil.prenom, 'Sophie'); assert.equal(d.bons.length, 3); assert.ok(d.conversations[0].messages.length >= 2); // thon au kilo + commande « formats » + bon de sortie
+    assert.equal(d.reservations_avant_sortie.length, 2);
   });
   test('supprimer mon compte : bons gardés mais anonymisés, messages effacés', async () => {
     await appeler('client', 'compte', { action: 'supprimer' });

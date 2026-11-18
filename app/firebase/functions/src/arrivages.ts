@@ -4,6 +4,7 @@ import { getDownloadURL, getStorage } from 'firebase-admin/storage';
 import { onCall } from 'firebase-functions/v2/https';
 import { APPEL, connecte, db, erreur, FieldValue, limiter } from './commun';
 import { notifier } from './notifier';
+import { convertirPrecommandes } from './sorties';
 import { cleProduit, produitValide, type Produit } from './formats';
 import { especeConnue, fermetureActive, FERMETURES_CONNUES, type Fermeture } from './regles';
 
@@ -49,6 +50,9 @@ export const publierArrivage = onCall(APPEL, async (req) => {
     return { e, produits };
   });
 
+  // réservations faites avant la sortie : deviennent des bons à payer, dans l'ordre d'arrivée
+  const sortie = await convertirPrecommandes(uid);
+
   // alerte « arrivage » aux clients qui suivent une de ces espèces (au plus toutes les 2 h par étal)
   const dernier = e.notifieLe?.toMillis?.() ?? 0;
   const especes = [...new Set(produits.map((p) => p.espece))];
@@ -58,5 +62,5 @@ export const publierArrivage = onCall(APPEL, async (req) => {
     await notifier(suiveurs.docs.map((p) => p.id).filter((id) => id !== uid), 'Arrivage à ' + e.port,
       e.prenom + ' vient de débarquer : ' + especes.join(', ').toLowerCase(), { lien: '/etal/' + uid });
   }
-  return { produits: produits.length };
+  return { produits: produits.length, ...sortie };
 });

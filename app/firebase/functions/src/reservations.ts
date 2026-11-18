@@ -9,7 +9,7 @@ import { CODE_BON, codeRetrait, creneaux, especeConnue, masquerNumeros, montantB
 
 import { appliquerPesee, prendre, rendre, rienRemis, type Demande, type LigneBon, type Produit } from './formats';
 export type { LigneBon };
-const KG_MAX_PARTICULIER = 10, KG_MAX_PRO = 100;
+export const KG_MAX_PARTICULIER = 10, KG_MAX_PRO = 100;
 const INTROUVABLE = 'Bon introuvable.'; // même réponse si le bon n'existe pas ou n'est pas à vous
 
 export function codeBon(v: unknown) {
@@ -19,7 +19,7 @@ export function codeBon(v: unknown) {
 }
 
 // Numéro de bon suivant (R-100, R-101…), sans doublon même avec des réservations simultanées
-async function prochainCode(t: FirebaseFirestore.Transaction) {
+export async function prochainCode(t: FirebaseFirestore.Transaction) {
   const ref = db.doc('compteurs/bons');
   const n = ((await t.get(ref)).data()?.n ?? 99) + 1;
   t.set(ref, { n });
@@ -128,7 +128,9 @@ export const payerBon = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async
   if (!b || b.clientId !== uid) throw erreur('not-found', INTROUVABLE);
   if (b.statut !== 'en_attente_paiement') throw erreur('failed-precondition', 'Ce bon est déjà payé ou annulé.');
   // une réservation du panier ne se prolonge pas : au-delà de 30 minutes, il faut la refaire
-  if (b.origine !== 'demande' && (b.creeLe?.toMillis?.() ?? 0) < Date.now() - 30 * 60_000) throw erreur('failed-precondition', 'Réservation expirée : refaites-la depuis l’étal.');
+  // réservation avant sortie : une heure après le retour du pêcheur
+  const delai = b.origine === 'sortie' ? 60 : 30;
+  if (b.origine !== 'demande' && (b.creeLe?.toMillis?.() ?? 0) < Date.now() - delai * 60_000) throw erreur('failed-precondition', 'Réservation expirée : refaites-la depuis l’étal.');
   const etal = (await db.doc('etals/' + b.etalId).get()).data();
   if (!etal || etal.statut !== 'verifie' || !etal.stripePret) throw erreur('failed-precondition', 'Ce pêcheur ne vend plus pour le moment.');
   const compteStripe = (await db.doc('comptesStripe/' + b.etalId).get()).data()?.compte as string | undefined;

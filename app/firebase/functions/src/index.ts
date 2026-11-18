@@ -6,6 +6,7 @@ export { stripeWebhook } from './stripeWebhook';
 export { envoyerMessage, messageCree, signaler } from './messages';
 export { jetonAppel } from './appels';
 export { taches } from './taches';
+export { annoncerSortie, precommander, annulerPrecommande, annulerSortie } from './sorties';
 export { laisserAvis, equipeRetirerAvis } from './avis';
 export { equipeAcces, equipeTableau, equipeDossier, equipeSignalement, equipeFacture } from './equipe';
 export { coupeCircuit } from './coupeCircuit';

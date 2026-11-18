@@ -26,6 +26,14 @@ export async function lancerTaches(maintenant = Date.now()) {
     await annulerBon(b.id, 'paiement non effectué dans le délai');
     bilan.abandons++;
   }
+  // 2 bis. sorties annoncées sans retour 12 h après l'heure prévue : réservations libérées, clients prévenus
+  const oubliees = await db.collection('sorties').where('statut', '==', 'annoncee').where('retour', '<', Timestamp.fromMillis(maintenant - 12 * 3600_000)).limit(50).get();
+  for (const s of oubliees.docs) {
+    await s.ref.update({ statut: 'expiree' });
+    const ps = await db.collection('precommandes').where('etalId', '==', s.id).where('statut', '==', 'en_attente').get();
+    for (const p of ps.docs) await p.ref.update({ statut: 'non_servie', raison: 'pas de retour annoncé' });
+    if (ps.size) await notifier([...new Set(ps.docs.map((p) => p.data().clientId as string))], 'Sortie sans arrivage', s.data().prenom + ' n’a pas publié d’arrivage : votre réservation est libérée. Rien ne vous a été débité.', { lien: '/bons' });
+  }
   // 3. rappel de retrait, une seule fois, 1 h après le paiement
   const rappels = await db.collection('bons').where('statut', '==', 'reserve').where('rappelEnvoye', '==', false).where('payeLe', '<', Timestamp.fromMillis(maintenant - 3600_000)).limit(200).get();
   for (const b of rappels.docs) {
