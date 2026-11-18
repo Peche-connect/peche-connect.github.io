@@ -23,6 +23,12 @@ service firebase.storage {
         && request.resource.contentType.matches('audio/.*');
     }
 
+    // PDF des factures : écrits seulement par le serveur, lus par l'acheteur et le vendeur
+    match /factures/{fichier} {
+      allow read: if request.auth != null && (resource.metadata.proId == request.auth.uid || resource.metadata.pecheurId == request.auth.uid);
+      allow write: if false;
+    }
+
     match /{autre=**} {
       allow read, write: if false;
     }

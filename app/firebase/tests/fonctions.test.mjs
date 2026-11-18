@@ -11,6 +11,7 @@ const PROJET = process.env.GCLOUD_PROJECT;
 const require = createRequire(import.meta.url);
 const { db, Timestamp } = require('../functions/lib/commun.js');
 const { lancerTaches } = require('../functions/lib/taches.js');
+const { verifierSuivi } = require('../functions/lib/historique.js');
 const { getAuth } = createRequire(new URL('../functions/package.json', import.meta.url))('firebase-admin/auth'); // même copie que l'appli initialisée par commun.js
 const AUTH = 'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:';
 const FONCTIONS = `http://127.0.0.1:5001/${PROJET}/europe-west9/`;
@@ -153,6 +154,9 @@ describe('Réservation et paiement', () => {
     const b = await lire('bons/' + code);
     assert.equal(b.statut, 'retire'); assert.equal(b.montantPaye, 23.3);
     assert.equal((await appeler('client', 'monQr', { code })).signature, null, 'QR périmé après le retrait');
+    const etapes = (await db.collection('bons/' + code + '/historique').orderBy('n').get()).docs.map((d) => d.data().etape);
+    assert.deepEqual(etapes, ['reservee', 'payee', 'retiree'], 'pas de facture pour un particulier');
+    assert.equal((await verifierSuivi(code)).valide, true);
   });
   test('un bon déjà retiré ne se pèse pas deux fois', async () => {
     await assert.rejects(appeler('pecheur', 'validerPesee', { code, poids: [1.4], preuve: qr.codeRetrait }), /déjà clôturé/);
@@ -212,6 +216,40 @@ describe('Besoins des professionnels', () => {
   test('le pro obtient son lien de paiement', async () => {
     assert.ok((await appeler('pro', 'payerBon', { code: code2 })).url);
     await assert.rejects(appeler('client', 'payerBon', { code: code2 }), /introuvable/);
+  });
+  test('payée puis pesée : facture numérotée, contenu figé, PDF archivé, suivi complet', async () => {
+    const b = await lire('bons/' + code2);
+    const sid = (await lire('bonsSecrets/' + code2)).stripeSession;
+    await webhook({ type: 'checkout.session.completed', data: { object: { id: sid, object: 'checkout.session', status: 'complete', amount_total: Math.round(b.montantBloque * 100), payment_intent: 'pi_2', metadata: { code: code2 } } } });
+    assert.equal((await lire('bons/' + code2)).statut, 'reserve');
+    const { codeRetrait } = await appeler('pro', 'monQr', { code: code2 });
+    const r = await appeler('pecheur', 'validerPesee', { code: code2, poids: [14.6], preuve: codeRetrait });
+    assert.equal(r.montantPaye, 190.7);
+    const numero = (await lire('bons/' + code2)).facture;
+    assert.match(numero, new RegExp('^FA-' + new Date().getFullYear() + '-000001$'), 'première facture de l’année');
+    const f = await lire('factures/' + numero);
+    assert.equal(f.totalTtc, 190.7); assert.equal(f.poisson.ttc, 189.8); assert.equal(f.services.ttc, 0.9);
+    assert.equal(f.acheteur.siret, '12345678900015'); assert.equal(f.vendeur.immatriculation, 'MQ 123456');
+    assert.equal(f.pdf, true, 'PDF archivé');
+    const suivi = await db.collection('bons/' + code2 + '/historique').orderBy('n').get();
+    assert.deepEqual(suivi.docs.map((d) => d.data().etape), ['commande_creee', 'payee', 'retiree', 'facture_emise']);
+    assert.deepEqual(suivi.docs.map((d) => d.data().par), ['pecheur', 'stripe', 'pecheur', 'systeme']);
+    assert.equal((await verifierSuivi(code2)).valide, true);
+  });
+  test('une étape modifiée après coup se voit (chaîne d’empreintes)', async () => {
+    const ref = db.doc('bons/' + code2 + '/historique/0003');
+    const avant = (await ref.get()).data();
+    await ref.update({ details: { ...avant.details, debite: 1 } });
+    assert.equal((await verifierSuivi(code2)).valide, false);
+    await ref.set(avant);
+    assert.equal((await verifierSuivi(code2)).valide, true);
+    await db.doc('bons/' + code2 + '/historique/0002').delete();
+    assert.equal((await verifierSuivi(code2)).valide, false, 'étape supprimée détectée');
+  });
+  test('une facture n’est jamais émise deux fois', async () => {
+    const { emettreFacture } = require('../functions/lib/factures.js');
+    assert.equal(await emettreFacture(code2), null);
+    assert.equal((await db.collection('factures').get()).size, 1);
   });
 });
 

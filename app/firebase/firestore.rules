@@ -61,6 +61,18 @@ service cloud.firestore {
     match /bons/{code} {
       allow read: if connecte() && (resource.data.clientId == moi() || resource.data.pecheurId == moi()
         || resource.data.get('chauffeurId', '') == moi());
+      // suivi étape par étape : lu par le client et le pêcheur du bon, écrit seulement par le serveur
+      match /historique/{etape} {
+        function bon() { return get(/databases/$(base)/documents/bons/$(code)).data; }
+        allow read: if connecte() && (bon().clientId == moi() || bon().pecheurId == moi());
+        allow write: if false;
+      }
+    }
+
+    // Factures des pros : contenu figé, lu par l'acheteur et le vendeur, jamais modifiable depuis l'appli
+    match /factures/{numero} {
+      allow read: if connecte() && (resource.data.proId == moi() || resource.data.pecheurId == moi());
+      allow write: if false;
     }
 
     // Messagerie : seulement les deux participants

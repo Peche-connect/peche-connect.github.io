@@ -42,6 +42,8 @@ before(async () => {
     await setDoc(doc(db, 'conversations', CONV, 'messages', 'm1'), { auteur: 'systeme', texte: 'Réservation payée' });
     await setDoc(doc(db, 'demandes/d1'), { proId: 'proD', proRaison: 'Chez Tante Arlette', proType: 'Restaurant', proCommune: 'Le Robert', espece: 'Thon jaune', kg: 15, prixMaxKg: 13, pour: 'Demain', statut: 'ouverte' });
     await setDoc(doc(db, 'reglages/general'), { fraisService: 0.9 });
+    await setDoc(doc(db, 'bons/R-100/historique/0001'), { n: 1, etape: 'reservee', par: 'client', uid: 'clientB' });
+    await setDoc(doc(db, 'factures/FA-2026-000001'), { numero: 'FA-2026-000001', proId: 'proD', pecheurId: 'pecheurA', totalTtc: 190.7 });
   });
 });
 after(async () => { await env?.cleanup(); });
@@ -114,6 +116,25 @@ describe('Professionnel', () => {
   test('ne publie pas au nom d’un autre', () => assertFails(addDoc(collection(qui(...PRO), 'demandes'), { proId: 'autre', proRaison: 'x', proType: 'Restaurant', proCommune: 'x', espece: 'Vivaneau', kg: 10, prixMaxKg: 16, pour: 'Demain', statut: 'ouverte', creeLe: serverTimestamp() })));
   test('ne peut pas marquer son besoin « accepté »', () => assertFails(updateDoc(doc(qui(...PRO), 'demandes/d1'), { statut: 'acceptee' })));
   test('annule son besoin', () => assertSucceeds(updateDoc(doc(qui(...PRO), 'demandes/d1'), { statut: 'annulee' })));
+});
+
+describe('Suivi des commandes et factures', () => {
+  test('le client lit le suivi de son bon', () => assertSucceeds(getDocs(collection(qui(...CLIENT_B), 'bons/R-100/historique'))));
+  test('le pêcheur aussi', () => assertSucceeds(getDoc(doc(qui(...PECHEUR), 'bons/R-100/historique/0001'))));
+  test('un autre client ne le lit pas', () => assertFails(getDoc(doc(qui(...CLIENT_C), 'bons/R-100/historique/0001'))));
+  test('personne ne réécrit l’historique', () => assertFails(updateDoc(doc(qui(...CLIENT_B), 'bons/R-100/historique/0001'), { etape: 'annulee' })));
+  test('personne n’ajoute d’étape', () => assertFails(setDoc(doc(qui(...PECHEUR), 'bons/R-100/historique/0002'), { n: 2, etape: 'retiree' })));
+  test('le pro lit sa facture', () => assertSucceeds(getDoc(doc(qui(...PRO), 'factures/FA-2026-000001'))));
+  test('le pêcheur vendeur aussi', () => assertSucceeds(getDoc(doc(qui(...PECHEUR), 'factures/FA-2026-000001'))));
+  test('un client ne lit pas la facture d’un autre', () => assertFails(getDoc(doc(qui(...CLIENT_B), 'factures/FA-2026-000001'))));
+  test('une facture ne se modifie pas', () => assertFails(updateDoc(doc(qui(...PRO), 'factures/FA-2026-000001'), { totalTtc: 1 })));
+  test('une facture ne se crée pas depuis l’appli', () => assertFails(setDoc(doc(qui(...PRO), 'factures/FA-2026-000002'), { proId: 'proD', pecheurId: 'pecheurA' })));
+  test('PDF de facture : lu par le pro, pas par un autre, jamais écrit depuis l’appli', async () => {
+    await env.withSecurityRulesDisabled((c) => uploadBytes(ref(c.storage(), 'factures/FA-2026-000001.pdf'), new Uint8Array([37, 80, 68, 70]), { contentType: 'application/pdf', customMetadata: { proId: 'proD', pecheurId: 'pecheurA' } }));
+    await assertSucceeds(getBytes(ref(quiS(...PRO), 'factures/FA-2026-000001.pdf')));
+    await assertFails(getBytes(ref(quiS(...CLIENT_B), 'factures/FA-2026-000001.pdf')));
+    await assertFails(uploadBytes(ref(quiS(...PRO), 'factures/FA-2026-000001.pdf'), new Uint8Array([1]), { contentType: 'application/pdf', customMetadata: { proId: 'proD', pecheurId: 'pecheurA' } }));
+  });
 });
 
 describe('Fichiers', () => {

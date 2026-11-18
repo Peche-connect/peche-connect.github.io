@@ -157,12 +157,13 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
   const etal = etalSnap.exists && etalSnap.data()?.pecheurId === uid ? etalSnap : null;
 
   if (action === 'exporter') {
-    const [pro, bons, convs, demandes, prive, bonsEtal, convsEtal] = await Promise.all([
+    const [pro, bons, convs, demandes, prive, bonsEtal, convsEtal, facturesAchat, facturesVente] = await Promise.all([
       db.doc('pros/' + uid).get(), db.collection('bons').where('clientId', '==', uid).get(),
       db.collection('conversations').where('clientId', '==', uid).get(), db.collection('demandes').where('proId', '==', uid).get(),
       etal ? etal.ref.collection('prive').doc('infos').get() : null,
       etal ? db.collection('bons').where('pecheurId', '==', uid).get() : null,
       etal ? db.collection('conversations').where('pecheurId', '==', uid).get() : null,
+      db.collection('factures').where('proId', '==', uid).get(), db.collection('factures').where('pecheurId', '==', uid).get(),
     ]);
     return JSON.parse(JSON.stringify({
       exporte_le: new Date().toISOString(), compte: { id: uid, email: req.auth?.token.email ?? null },
@@ -170,6 +171,7 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
       etal: etal ? { ...etal.data(), prive: prive?.data() ?? null } : null,
       bons: bons.docs.map((b) => b.data()), conversations: await Promise.all(convs.docs.map(messagesDe)), besoins: demandes.docs.map((d) => d.data()),
       ventes: bonsEtal?.docs.map((b) => b.data()) ?? [], conversations_pecheur: convsEtal ? await Promise.all(convsEtal.docs.map(messagesDe)) : [],
+      factures: [...facturesAchat.docs, ...facturesVente.docs].map((f) => f.data()),
     }));
   }
 
@@ -183,7 +185,7 @@ export const compte = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (
   // paiements pas encore faits : pages de paiement fermées et poisson remis en vente
   const nonPayes = [...(await db.collection('bons').where('clientId', '==', uid).where('statut', '==', 'en_attente_paiement').get()).docs,
     ...(etal ? (await db.collection('bons').where('etalId', '==', etal.id).where('statut', '==', 'en_attente_paiement').get()).docs : [])];
-  for (const b of nonPayes) { await expirerSession(b.id); await annulerBon(b.id); }
+  for (const b of nonPayes) { await expirerSession(b.id); await annulerBon(b.id, 'compte supprimé par son titulaire'); }
   await getAuth().revokeRefreshTokens(uid); // plus aucune action possible avec l'ancienne connexion
 
   // bons gardés 10 ans pour la comptabilité, mais détachés de la personne

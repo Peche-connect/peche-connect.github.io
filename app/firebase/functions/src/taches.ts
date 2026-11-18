@@ -5,9 +5,10 @@ import { db, FieldValue, REGION, Timestamp } from './commun';
 import { notifier } from './notifier';
 import { annulerBon } from './reservations';
 import { champsSiret, verifierSiret } from './sirene';
+import { archiverPdf, emettreFacture } from './factures';
 
 export async function lancerTaches(maintenant = Date.now()) {
-  const bilan = { positions: 0, abandons: 0, rappels: 0, sirets: 0 };
+  const bilan = { positions: 0, abandons: 0, rappels: 0, sirets: 0, factures: 0 };
   // 1. positions expirées
   const pos = await db.collectionGroup('messages').where('positionExpireLe', '<', Timestamp.fromMillis(maintenant)).limit(300).get();
   for (const m of pos.docs) {
@@ -22,7 +23,7 @@ export async function lancerTaches(maintenant = Date.now()) {
     // jamais pendant qu'une page de paiement est encore ouverte (sinon le client paierait un bon annulé)
     const exp = (await db.doc('bonsSecrets/' + b.id).get()).data()?.sessionExpireLe;
     if (exp && exp.toMillis() > maintenant) continue;
-    await annulerBon(b.id);
+    await annulerBon(b.id, 'paiement non effectué dans le délai');
     bilan.abandons++;
   }
   // 3. rappel de retrait, une seule fois, 1 h après le paiement
@@ -42,6 +43,11 @@ export async function lancerTaches(maintenant = Date.now()) {
     const v = await verifierSiret(String(x.siret));
     if (v.statut !== 'indisponible') { await p.ref.update(champsSiret(v)); bilan.sirets++; }
   }
+  // 5. factures des pros pas encore émises ou PDF pas encore archivé (erreur passagère) : nouvel essai
+  const sansFacture = await db.collection('bons').where('statut', '==', 'retire').where('facture', '==', null).limit(20).get();
+  for (const b of sansFacture.docs) if (b.data().pro && (await emettreFacture(b.id).catch(() => null))) bilan.factures++;
+  const sansPdf = await db.collection('factures').where('pdf', '==', false).limit(20).get();
+  for (const f of sansPdf.docs) await archiverPdf(f.id).catch(() => null);
   return bilan;
 }
 

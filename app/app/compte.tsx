@@ -101,7 +101,13 @@ function FacturesDuMois() {
           </View>
         );
       })}
-      <T gris petit>Le détail de chaque facture est sur le bon correspondant. Taux de TVA à confirmer avec le comptable.</T>
+      {app.mesBons().filter((b) => b.facture).map((b) => (
+        <Pressable key={b.code} onPress={() => app.ouvrirFacture(b.facture!)} accessibilityRole="button" accessibilityLabel={'Facture ' + b.facture}
+          style={{ flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 8, borderBottomWidth: 1, borderColor: c.ligne }}>
+          <T gras>{b.facture}</T><T gris>{euro(b.montantPaye ?? 0)} · PDF</T>
+        </Pressable>
+      ))}
+      <T gris petit>Factures numérotées et gardées 10 ans. Taux de TVA à confirmer avec le comptable.</T>
     </View>
   );
 }

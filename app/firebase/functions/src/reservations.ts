@@ -2,6 +2,8 @@
 // pesée et encaissement du poids réel, besoins des pros.
 import { onCall } from 'firebase-functions/v2/https';
 import { alerte, APPCHECK, APPEL, centimes, connecte, db, erreur, FieldValue, journal, limiter, QR_SECRET, reglages, site, stripe, STRIPE_SECRET_KEY, Timestamp } from './commun';
+import { ajouterEtape, type Auteur } from './historique';
+import { emettreFacture } from './factures';
 import { notifier } from './notifier';
 import { CODE_BON, codeRetrait, creneaux, especeConnue, masquerNumeros, montantBloque, montantsPesee, nomPropre, normaliser, preuveValide, signerBon } from './regles';
 
@@ -47,11 +49,12 @@ export async function expirerSession(code: string) {
   if (s) await stripe().checkout.sessions.expire(s).catch(() => {});
 }
 
+const SYSTEME: Auteur = { uid: null, role: 'systeme' };
 // Remet le poisson en vente et annule un bon non payé (ou payé mais jamais retiré)
-export async function annulerBon(code: string) {
+export async function annulerBon(code: string, raison = 'paiement non effectué', par: Auteur = SYSTEME) {
   await db.runTransaction(async (t) => {
     const ref = db.doc('bons/' + code); const b = (await t.get(ref)).data();
-    if (!b || !['en_attente_paiement', 'reserve'].includes(b.statut)) return;
+    if (!b || !['en_attente_paiement', 'reserve', 'en_livraison'].includes(b.statut)) return;
     const etalRef = db.doc('etals/' + b.etalId); const etal = (await t.get(etalRef)).data();
     if (etal && b.origine !== 'demande') {
       const produits = (etal.produits as Produit[]).map((p) => {
@@ -60,7 +63,7 @@ export async function annulerBon(code: string) {
       });
       t.update(etalRef, { produits });
     }
-    t.update(ref, { statut: 'annule' });
+    t.update(ref, { statut: 'annule', ...ajouterEtape(t, code, b, 'annulee', par, { raison }) });
   });
 }
 
@@ -108,7 +111,8 @@ export const creerReservation = onCall({ ...APPEL, consumeAppCheckToken: APPCHEC
       pro: infosPro ? { raison: infosPro.raison, type: infosPro.type, siret: infosPro.siret, commune: infosPro.commune } : null,
       livraison, chauffeurId: null, lignes, creneau: livraison ? 'Livraison ' + creneau.toLowerCase() : creneau,
       statut: 'en_attente_paiement', montantBloque: montantBloque(r, lignes, livraison?.frais ?? 0), montantPaye: null, commission: null,
-      creeLe: FieldValue.serverTimestamp(), payeLe: null, retireLe: null, rappelEnvoye: false,
+      creeLe: FieldValue.serverTimestamp(), payeLe: null, retireLe: null, rappelEnvoye: false, facture: null,
+      ...ajouterEtape(t, c, undefined, 'reservee', { uid, role: infosPro ? 'pro' : 'client' }, { kg: Math.round(totalKg * 10) / 10, montantBloque: montantBloque(r, lignes, livraison?.frais ?? 0), creneau: livraison ? 'Livraison ' + creneau.toLowerCase() : creneau }),
     });
     return c;
   });
@@ -118,7 +122,7 @@ export const creerReservation = onCall({ ...APPEL, consumeAppCheckToken: APPCHEC
     const s = await sessionPaiement(code, bon.montantBloque, compteStripe, req.auth?.token.email, false);
     return { code, url: s.url };
   } catch (e) {
-    await annulerBon(code);
+    await annulerBon(code, 'page de paiement impossible à créer');
     throw e;
   }
 });
@@ -198,9 +202,14 @@ export const validerPesee = onCall({ ...APPEL, consumeAppCheckToken: APPCHECK, s
   const fermer = { fermeeLe: Timestamp.fromMillis(Date.now() + 24 * 3600_000) }; // messagerie fermée 24 h après le retrait
   const conv = db.doc('conversations/' + b.etalId + '_' + b.clientId);
 
+  const pecheur: Auteur = { uid, role: 'pecheur' };
   if (pesees.every((l) => l.kg === 0)) {
     await stripe().paymentIntents.cancel(paiement);
-    await ref.update({ statut: 'annule', lignes: pesees, montantPaye: 0, retireLe: FieldValue.serverTimestamp() });
+    await db.runTransaction(async (t) => {
+      const x = (await t.get(ref)).data();
+      t.update(ref, { statut: 'annule', lignes: pesees, montantPaye: 0, retireLe: FieldValue.serverTimestamp(),
+        ...ajouterEtape(t, code, x, 'annulee', pecheur, { raison: 'pesée à 0 kg (rupture ou client absent)', debite: 0 }) });
+    });
     await db.doc('bonsSecrets/' + code).update({ nonce: FieldValue.delete() });
     await conv.set(fermer, { merge: true });
     await notifier([b.clientId], 'Réservation ' + code + ' annulée', 'Rien ne vous a été débité.');
@@ -222,7 +231,12 @@ export const validerPesee = onCall({ ...APPEL, consumeAppCheckToken: APPCHECK, s
     await ref.update({ statut: b.statut });
     throw e;
   }
-  await ref.update({ statut: 'retire', lignes: pesees, montantPaye: m.total, commission: m.plateforme, retireLe: FieldValue.serverTimestamp() });
+  await db.runTransaction(async (t) => {
+    const x = (await t.get(ref)).data();
+    t.update(ref, { statut: 'retire', lignes: pesees, montantPaye: m.total, commission: m.plateforme, retireLe: FieldValue.serverTimestamp(),
+      ...ajouterEtape(t, code, x, 'retiree', pecheur, { poids: pesees.map((l) => ({ espece: l.espece, kg: l.kg })), debite: m.total, preuve: String(d.preuve ?? '').length === 6 ? 'code de retrait' : 'QR' }) });
+  });
+  if (b.pro) await emettreFacture(code).catch(() => null); // sinon refaite par les tâches automatiques
   await db.doc('bonsSecrets/' + code).update({ nonce: FieldValue.delete() }); // l'ancien QR ne vaut plus rien
   await conv.set(fermer, { merge: true });
   await journal(uid, 'pesée', { code, total: m.total, plateforme: m.plateforme });
@@ -290,7 +304,8 @@ export const accepterDemande = onCall(APPEL, async (req) => {
       pro: { raison: pro.raison, type: pro.type, siret: pro.siret, commune: pro.commune }, livraison, chauffeurId: null, lignes,
       creneau: d.pour === 'Demain' ? 'Demain matin' : 'Aujourd’hui', statut: 'en_attente_paiement',
       montantBloque: montantBloque(r, lignes, livraison?.frais ?? 0), montantPaye: null, commission: null,
-      creeLe: FieldValue.serverTimestamp(), payeLe: null, retireLe: null, rappelEnvoye: false,
+      creeLe: FieldValue.serverTimestamp(), payeLe: null, retireLe: null, rappelEnvoye: false, facture: null,
+      ...ajouterEtape(t, code, undefined, 'commande_creee', { uid, role: 'pecheur' }, { besoin: id, kg: d.kg, montantBloque: montantBloque(r, lignes, livraison?.frais ?? 0) }),
     });
     t.update(dRef, { statut: 'acceptee', etalId: uid, bonCode: code });
     return { code, d };

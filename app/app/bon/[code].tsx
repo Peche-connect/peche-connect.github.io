@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcCarte } from '../../src/components/icones';
 import { Itineraire } from '../../src/components/Itineraire';
 import { QR } from '../../src/components/QR';
+import { Suivi } from '../../src/components/Suivi';
 import { Bouton, EnTete, Ligne, Pastille, T, Vide } from '../../src/components/ui';
 import { PORTS } from '../../src/data/demo';
 import { detailTva, euro, kg, TVA_PRODUITS_MER } from '../../src/format';
@@ -36,6 +37,7 @@ export default function BonEcran() {
         <T gris>Comme pour une réservation, seul le poids réel est débité à la pesée.</T>
         {paye ? null : <Bouton titre={'Payer ' + euro(b.montantBloque) + ' max'} onPress={() => app.payerBon(b.code)} />}
         <T gris petit>La messagerie avec le pêcheur s’ouvre une fois la commande réglée.</T>
+        <Suivi code={b.code} statut={b.statut} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -69,13 +71,14 @@ export default function BonEcran() {
           const ttc = retire ? b.montantPaye ?? 0 : b.montantBloque; const t = detailTva(ttc);
           return (
             <View style={{ margin: 16, marginBottom: 0, borderRadius: 16, backgroundColor: c.doux, padding: 16, gap: 6 }}>
-              <T tresGras style={{ fontSize: 16 }}>{retire ? 'Facture' : 'Facture (estimation)'} · {b.code}</T>
+              <T tresGras style={{ fontSize: 16 }}>{retire ? 'Facture ' + (b.facture ?? '(en préparation)') : 'Facture (estimation) · ' + b.code}</T>
               <T>{b.pro.raison}</T>
               <T gris petit>SIRET {b.pro.siret.replace(/(\d{3})(\d{3})(\d{3})(\d{5})/, '$1 $2 $3 $4')} · {b.pro.commune}</T>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}><T>Montant HT</T><T>{euro(t.ht)}</T></View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T>TVA {(TVA_PRODUITS_MER * 100).toFixed(1).replace('.', ',')} %</T><T>{euro(t.tva)}</T></View>
               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T tresGras>Total TTC</T><T tresGras>{euro(t.ttc)}</T></View>
-              <T gris petit>{retire ? 'Facture envoyée par e-mail et disponible dans votre compte.' : 'La facture définitive est établie au poids réel.'} Taux de TVA à confirmer avec le comptable.</T>
+              {retire && b.facture ? <Bouton clair titre="Télécharger la facture (PDF)" style={{ marginTop: 6, height: 46 }} onPress={() => app.ouvrirFacture(b.facture!)} /> : null}
+              <T gris petit>{retire ? 'Facture numérotée, gardée 10 ans, dans « Mon compte » aussi.' : 'La facture définitive est établie au poids réel.'} Taux de TVA à confirmer avec le comptable.</T>
             </View>
           );
         })() : null}
@@ -101,6 +104,7 @@ export default function BonEcran() {
           {b.livraison ? null : <Bouton titre="Itinéraire" style={{ flex: 1, height: 50 }} onPress={() => setIti(true)} />}
           <Bouton titre="Message" clair style={{ flex: 1, height: 50 }} onPress={() => router.push({ pathname: '/chat/[id]', params: { id: e.id + '|Vous' } })} />
         </View>
+        <Suivi code={b.code} statut={b.statut} />
         <T gris style={{ margin: 16 }}>{e.pecheur} pèse votre poisson devant vous et valide le bon. Seul le poids réel est débité ; le reste est libéré tout de suite.</T>
       </ScrollView>
       <Itineraire visible={iti} onFermer={() => setIti(false)} lieu={e.lieu ?? e.port} lat={p.lat} lon={p.lon} />

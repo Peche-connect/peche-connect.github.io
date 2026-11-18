@@ -53,7 +53,11 @@ export type Bon = {
   montantPaye?: number;
   creeLe: number;
   date?: string; // date de création (mode réel), pour le relevé mensuel
+  facture?: string; // numéro de facture (pros), ex. FA-2026-000001
 };
+
+// Une étape du suivi d'un bon (réservée, payée, retirée…), écrite par le serveur
+export type EtapeSuivi = { etape: 'reservee' | 'commande_creee' | 'payee' | 'paiement_refuse' | 'retiree' | 'annulee' | 'facture_emise'; par: string; quand: number; details: Record<string, unknown> };
 
 export type Message = {
   id: string;

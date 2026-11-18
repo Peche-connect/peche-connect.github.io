@@ -16,7 +16,7 @@ import {
 import { connectFunctionsEmulator, getFunctions, httpsCallable, type Functions } from 'firebase/functions';
 import { connectStorageEmulator, getBlob, getStorage, ref, uploadBytes, type FirebaseStorage } from 'firebase/storage';
 import { Platform } from 'react-native';
-import type { Bon, Conversation, Demande, Etal, InfosPro, LignePanier, Message, Session } from '../types';
+import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Session } from '../types';
 
 const CONFIG = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -180,7 +180,7 @@ export async function chargerEtals(avecAdresse: string[] = []): Promise<Etal[]> 
   return [...etals].map(([id, e]) => versEtal(id, e, prives.get(id)));
 }
 
-type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null };
+type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null; facture?: string | null };
 export async function chargerBons(moi: string): Promise<Bon[]> {
   const c = await droits();
   const qs = [query(collection(db(), 'bons'), where('clientId', '==', moi))];
@@ -194,7 +194,7 @@ export async function chargerBons(moi: string): Promise<Bon[]> {
       lignes: b.lignes.map((l) => ({ ...l, produitId: l.produitId ?? 'commande' })), creneau: b.creneau, montantBloque: Number(b.montantBloque),
       montantPaye: b.montantPaye == null ? undefined : Number(b.montantPaye),
       statut: b.statut === 'retire' ? 'retire' : b.statut === 'en_attente_paiement' ? 'a_payer' : 'reserve',
-      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(),
+      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(), facture: b.facture ?? undefined,
     }));
 }
 
@@ -302,18 +302,26 @@ export async function envoyerAudio(conv: string, _auteur: 'client' | 'pecheur', 
 }
 // Adresse d'écoute d'un message vocal (fichier privé : droits vérifiés par les règles)
 // Le fichier est téléchargé avec le jeton de connexion de la personne : aucun lien partageable n'est créé.
-export async function lienAudio(chemin: string) {
+export const lienAudio = (chemin: string) => fichierPrive('messages-audio/' + chemin, 'Message vocal indisponible.');
+// Facture PDF d'un pro (privée : l'acheteur et le vendeur seulement)
+export const lienFacture = (numero: string) => fichierPrive('factures/' + numero + '.pdf', 'Facture pas encore disponible : réessayez dans quelques minutes.');
+async function fichierPrive(chemin: string, siAbsent: string) {
   init();
-  const r = ref(_st, 'messages-audio/' + chemin);
-  if (Platform.OS === 'web') return URL.createObjectURL(await getBlob(r));
+  const r = ref(_st, chemin);
+  if (Platform.OS === 'web') { try { return URL.createObjectURL(await getBlob(r)); } catch { throw new ErreurServeur(siAbsent); } }
   const u = await utilisateur();
   if (!u) throw new ErreurServeur('Session expirée, reconnectez-vous.');
   const FS = await import('expo-file-system');
-  const local = FS.cacheDirectory + 'vocal-' + chemin.replace(/[^A-Za-z0-9_.-]/g, '_');
+  const local = FS.cacheDirectory + chemin.replace(/[^A-Za-z0-9_.-]/g, '_');
   const url = (EMULATEUR ? 'http://' + EMULATEUR + ':9199' : 'https://firebasestorage.googleapis.com') + '/v0/b/' + r.bucket + '/o/' + encodeURIComponent(r.fullPath) + '?alt=media';
   const res = await FS.downloadAsync(url, local, { headers: { Authorization: 'Firebase ' + (await u.getIdToken()) } });
-  if (res.status !== 200) throw new ErreurServeur('Message vocal indisponible.');
+  if (res.status !== 200) throw new ErreurServeur(siAbsent);
   return res.uri;
+}
+// Suivi étape par étape d'un bon (écrit par le serveur)
+export async function chargerSuivi(code: string): Promise<EtapeSuivi[]> {
+  const q = await essai(() => getDocs(query(collection(db(), 'bons', code, 'historique'), orderBy('n'))));
+  return q.docs.map((d) => { const x = d.data(); return { etape: x.etape, par: x.par, quand: (x.quand as Timestamp).toMillis(), details: x.details ?? {} }; });
 }
 export async function marquerLu(conv: string, role: 'client' | 'pecheur') {
   await updateDoc(doc(db(), 'conversations', conv), role === 'client' ? { luClient: true } : { luPecheur: true });

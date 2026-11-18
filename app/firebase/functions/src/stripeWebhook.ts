@@ -5,6 +5,7 @@ import Stripe from 'stripe';
 import { logger } from 'firebase-functions';
 import { alerte, centimes, CODE_BON_OK, db, FieldValue, REGION, stripe, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_WEBHOOK_SECRET_CONNECT, Timestamp } from './commun';
 import { notifier } from './notifier';
+import { ajouterEtape } from './historique';
 import { nouveauNonce } from './regles';
 import { annulerBon, ouvrirConversation } from './reservations';
 
@@ -48,7 +49,8 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
           if (bon.statut !== 'en_attente_paiement') {
             return bon.statut === 'annule' ? { refus: true as const, statut: 'annule' } : null; // déjà traité (Stripe peut renvoyer un message)
           }
-          t.update(ref, { statut: 'reserve', payeLe: FieldValue.serverTimestamp() });
+          t.update(ref, { statut: 'reserve', payeLe: FieldValue.serverTimestamp(),
+            ...ajouterEtape(t, code, bon, 'payee', { uid: null, role: 'stripe' }, { montantBloque: bon.montantBloque, session: s.id }) });
           // secret propre à ce bon pour le QR et le code de retrait (effacé après le retrait)
           t.set(db.doc('bonsSecrets/' + code), { stripePaiement: paiement, nonce: nouveauNonce() }, { merge: true });
           // adresse exacte du pêcheur débloquée pour ce client, jusqu'au lendemain
@@ -75,14 +77,13 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
         const code = s.metadata?.code;
         if (!code || !CODE_BON_OK(code) || s.metadata?.relance === '1') break;
         const secrets = (await db.doc('bonsSecrets/' + code).get()).data();
-        if (secrets?.stripeSession === s.id) await annulerBon(code);
+        if (secrets?.stripeSession === s.id) await annulerBon(code, 'page de paiement expirée');
         break;
       }
       case 'payment_intent.canceled': {
         const code = ev.data.object.metadata?.code;
         if (!code || !CODE_BON_OK(code)) break;
-        const ref = db.doc('bons/' + code); const b = (await ref.get()).data();
-        if (b && ['reserve', 'en_livraison'].includes(b.statut)) await ref.update({ statut: 'annule' });
+        await annulerBon(code, 'empreinte bancaire expirée ou annulée', { uid: null, role: 'stripe' });
         break;
       }
       case 'account.updated': {

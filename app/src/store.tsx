@@ -5,7 +5,7 @@ import { ETALS_DEMO, PORTS } from './data/demo';
 import { distanceKm, FRAIS_LIVRAISON, FRAIS_SERVICE, heure, kg, LIVRAISON_MIN_KG, montantBloque, sousTotal } from './format';
 import { versDataUrl, type Enregistrement } from './audio';
 import * as B from './services/backend';
-import type { Bon, Conversation, Demande, Etal, InfosPro, LignePanier, Message, Panier, Role, Session } from './types';
+import type { Bon, Conversation, Demande, Etal, EtapeSuivi, InfosPro, LignePanier, Message, Panier, Role, Session } from './types';
 
 // Mode démo : tout est stocké sur le téléphone, aucun paiement réel.
 // Mode réel : dès que les clés Firebase EXPO_PUBLIC_FIREBASE_* sont renseignées (fichier .env, voir
@@ -316,6 +316,25 @@ function useMagasin() {
       if (MODE_DEMO) return { lien: SITE + '/pesee/' + code + '?s=demo', pin: '482615' };
       try { const r = await B.monQr(code); return r.signature ? { lien: SITE + '/pesee/' + code + '?s=' + r.signature, pin: r.codeRetrait ?? '' } : { lien: '', pin: '' }; } catch { return { lien: '', pin: '' }; }
     },
+    // Suivi étape par étape du bon (en démo : reconstitué à partir de son état)
+    async suivi(code: string): Promise<EtapeSuivi[]> {
+      if (!MODE_DEMO) { try { return await B.chargerSuivi(code); } catch { return []; } }
+      const b = e.bons.find((y) => y.code === code); if (!b) return [];
+      const j = new Date(); j.setHours(0, 0, 0, 0); const t = (m: number) => j.getTime() + m * 60_000;
+      const s: EtapeSuivi[] = [{ etape: b.pro && b.statut === 'a_payer' ? 'commande_creee' : 'reservee', par: b.pro ? 'pro' : 'client', quand: t(b.creeLe), details: { montantBloque: b.montantBloque } }];
+      if (b.statut !== 'a_payer') s.push({ etape: 'payee', par: 'stripe', quand: t(b.creeLe + 1), details: {} });
+      if (b.statut === 'retire') s.push({ etape: 'retiree', par: 'pecheur', quand: t(b.creeLe + 60), details: { debite: b.montantPaye } });
+      if (b.facture) s.push({ etape: 'facture_emise', par: 'systeme', quand: t(b.creeLe + 60), details: { numero: b.facture } });
+      return s;
+    },
+    // Ouvre la facture PDF d'un pro (fichier privé)
+    async ouvrirFacture(numero: string) {
+      if (MODE_DEMO) { erreur(new Error('Démo : la facture PDF est créée par le serveur, une fois l’appli branchée.')); return; }
+      try {
+        const lien = await B.lienFacture(numero);
+        if (Platform.OS === 'web') window.open(lien, '_blank'); else await (await import('react-native')).Linking.openURL(lien);
+      } catch (err) { erreur(err); }
+    },
     async verifierQr(code: string, signature: string): Promise<{ ok: boolean; message: string }> {
       if (MODE_DEMO) return /^\d{6}$/.test(signature) || signature === 'demo' ? { ok: true, message: 'Bon reconnu (démo : pas de vérification).' } : { ok: false, message: 'Code de retrait : 6 chiffres.' };
       try { const r = await B.verifierBon(code, signature); return { ok: true, message: 'Bon authentique · ' + r.client + ' · ' + r.creneau }; }
@@ -413,7 +432,7 @@ function useMagasin() {
         const b = x.bons.find((y) => y.code === code)!;
         b.lignes.forEach((l, i) => (l.kg = poids[i]));
         b.montantPaye = Math.round((sousTotal(b.lignes) + FRAIS_SERVICE + (b.livraison?.frais ?? 0)) * 100) / 100;
-        b.statut = 'retire'; return x;
+        b.statut = 'retire'; if (b.pro) b.facture = 'FA-DEMO-' + code.replace('R-', '').padStart(6, '0'); return x;
       });
       return true;
     },
