@@ -81,18 +81,30 @@ enregistrements MX, SPF et DKIM que Zoho affiche → créer `contact@peche-conne
 
 ## 7. Premiers pêcheurs
 
-- Un pêcheur s'inscrit dans l'appli (rôle « Pêcheur ») : son étal apparaît dans **Firestore > etals**
-  avec `statut = en_attente`. Son **numéro de marin** est dans `etals/<id>/verification/dossier`
-  (jamais visible des clients). Le vérifier en interne (aucun service public ne peut être interrogé
-  automatiquement), avec l'immatriculation du bateau (`etals/<id>/prive/infos`). Si tout est bon : mettre
-  `numeroVerifie` à `true` dans le dossier, puis `statut` à **`verifie`** sur l'étal. Ajouter aussi dans
-  `prive/infos` son `nomLegal` et son `siret` (pour les factures).
+- **Espace équipe** (dans l'appli : « Mon compte » > « Espace équipe ») : créer dans la console Firebase le
+  document **Firestore > reglages > equipe** avec un champ `emails` (liste) contenant les adresses des
+  associés (ex. `["louis@…", "bertrand@…"]`). Ces comptes (e-mail confirmé) voient alors : les pêcheurs à
+  vérifier (numéro de marin, immatriculation) avec les boutons « Vérifié » / « Refuser » (motif envoyé au
+  pêcheur), les signalements (classer / suspendre le compte), les derniers avis (retirer un avis abusif) et
+  les factures (télécharger le PDF). Cette liste n'est lisible par personne depuis l'appli.
+- Un pêcheur s'inscrit dans l'appli (rôle « Pêcheur ») : son étal apparaît dans l'espace équipe
+  (`statut = en_attente`). Son **numéro de marin** (`etals/<id>/verification/dossier`) n'est jamais visible
+  des clients. Le vérifier en interne (aucun service public ne peut être interrogé automatiquement), avec
+  l'immatriculation du bateau, puis « Vérifié » dans l'espace équipe. Ajouter dans la console
+  `etals/<id>/prive/infos` son `nomLegal` et son `siret` (pour les factures).
 - S'il change ensuite de bateau, d'immatriculation, de port ou de numéro de marin, il repasse tout seul
   en `en_attente` : refaire la vérification.
 - Il ouvre ensuite son compte de paiement Stripe depuis l'appli ; Stripe prévient le serveur quand c'est prêt.
 - Montants : **Firestore > reglages > general** (créer le document si besoin : `fraisService`,
   `commissionPct`, `margeEmpreinte`, `livraisonMinKg`, `fraisLivraison`). Sans document : 0,90 € de frais,
   0 % de commission, marge de 10 %, livraison 15 € dès 10 kg.
+- **Règles d'annulation (provisoires, à décider entre associés)**, dans le même document `reglages/general` :
+  `annulationClientAvantMin` (60 : le client annule gratuitement jusqu'à 1 h avant l'heure limite de retrait),
+  `absentApresMin` (60 : le pêcheur déclare un client absent 1 h après l'heure limite),
+  `penaliteAbsencePct` (0.3 : 30 % du poisson réservé débité au client absent, pour le pêcheur ; 0 = rien),
+  `rupturesAlerte` (3 : au bout de 3 ruptures en 30 jours, un signalement arrive à l'équipe). Les mêmes
+  valeurs sont écrites dans l'appli (`app/src/annulation.ts`, texte des conditions) : les changer aux deux
+  endroits. Un bon payé jamais clôturé est annulé sans frais au bout de 6 jours.
 - Fermetures : lambi et langouste déjà bloqués ; zones chlordécone dans **Firestore > fermetures**
   (`espece`, `debut` « MM-JJ », `fin`, `motif`, `port`).
 
