@@ -1,0 +1,11 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["EQUIPE_APPLE.fr.pecheconnect.app"],
+        "components": [{ "/": "/bon/*" }, { "/": "/pesee/*" }, { "/": "/connexion*" }, { "/": "/appel/*" }]
+      }
+    ]
+  },
+  "webcredentials": { "apps": ["EQUIPE_APPLE.fr.pecheconnect.app"] }
+}

@@ -32,10 +32,10 @@ function BulleAudio({ uri, duree, mien }: { uri: string; duree: number; mien: bo
   );
 }
 
-export function Fil({ conv, moi, nomAutre, rapides, onEnvoyer, onAudio, onPosition, avant }: {
+export function Fil({ conv, moi, nomAutre, rapides, onEnvoyer, onAudio, onPosition, avant, apres }: {
   conv: Conversation; moi: Role; nomAutre: string; rapides: string[]; onEnvoyer: (t: string) => void;
   onAudio?: (a: Enregistrement) => void;
-  onPosition?: (m: { lat: number; lon: number; libelle: string }) => void; avant?: React.ReactNode;
+  onPosition?: (m: { lat: number; lon: number; libelle: string }) => void; avant?: React.ReactNode; apres?: React.ReactNode;
 }) {
   const [texte, setTexte] = useState('');
   const [enreg, setEnreg] = useState<{ arreter: () => Promise<Enregistrement | null>; annuler: () => void } | null>(null);
@@ -73,6 +73,7 @@ export function Fil({ conv, moi, nomAutre, rapides, onEnvoyer, onAudio, onPositi
           <IcVerrou couleur={c.gris} taille={14} />
           <T gris petit style={{ flex: 1, textAlign: 'center' }}>Messagerie ouverte après la réservation. Les numéros restent masqués.</T>
         </View>
+        {apres}
         {conv.messages.map((m) => {
           if (m.auteur === 'systeme') return <T key={m.id} gris petit style={{ alignSelf: 'center', textAlign: 'center', backgroundColor: c.doux, padding: 8, borderRadius: 10, overflow: 'hidden' }}>{m.texte}</T>;
           const mien = m.auteur === moi;

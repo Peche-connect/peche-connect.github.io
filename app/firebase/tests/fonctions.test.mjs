@@ -195,6 +195,17 @@ describe('Messagerie', () => {
     assert.equal((await lire('conversations/' + conv())).appelEnCours, undefined);
     await assert.rejects(appeler('autre', 'jetonAppel', { conv: conv() }), /introuvable/);
   });
+  test('signaler une conversation, puis la bloquer', async () => {
+    assert.equal((await appeler('client', 'signaler', { conv: conv(), motif: 'Propos déplacés' })).ok, true);
+    await assert.rejects(appeler('autre', 'signaler', { conv: conv(), motif: 'x' }), /introuvable/);
+    const s = (await db.collection('signalements').where('conv', '==', conv()).get()).docs.map((d) => d.data());
+    assert.equal(s.length, 1); assert.equal(s[0].contre, comptes.pecheur.uid);
+    const avant = (await lire('conversations/' + conv())).fermeeLe ?? null;
+    await appeler('client', 'signaler', { conv: conv(), motif: 'Autre problème', bloquer: true });
+    await assert.rejects(appeler('pecheur', 'envoyerMessage', { conv: conv(), texte: 'Allô ?' }), /fermée/);
+    await assert.rejects(appeler('pecheur', 'jetonAppel', { conv: conv() }), /fermée/);
+    await db.doc('conversations/' + conv()).update({ fermeeLe: avant, bloqueePar: null }); // remis pour la suite
+  });
   test('conversation fermée après le retrait', async () => {
     assert.ok((await lire('conversations/' + conv())).fermeeLe, 'date de fermeture posée par la pesée');
     await db.doc('conversations/' + conv()).update({ fermeeLe: Timestamp.fromMillis(Date.now() - 1000) });

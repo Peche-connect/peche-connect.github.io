@@ -18,7 +18,7 @@ module.exports = ({ config }) => ({
   version: '1.0.0',
   owner: process.env.EXPO_OWNER || undefined,
   runtimeVersion: { policy: 'appVersion' },
-  extra: { ...(config.extra || {}), eas: { projectId: process.env.EAS_PROJECT_ID || undefined } },
+  extra: { ...(config.extra || {}), eas: { projectId: process.env.EXPO_PUBLIC_EAS_PROJECT_ID || undefined } },
   ios: {
     ...config.ios,
     buildNumber: '1',
@@ -42,7 +42,7 @@ module.exports = ({ config }) => ({
     blockedPermissions: ['android.permission.READ_PHONE_STATE', 'android.permission.ACCESS_BACKGROUND_LOCATION'],
     intentFilters: [{
       action: 'VIEW', autoVerify: true, category: ['BROWSABLE', 'DEFAULT'],
-      data: [{ scheme: 'https', host: domaine, pathPrefix: '/bon' }, { scheme: 'https', host: domaine, pathPrefix: '/pesee' }, { scheme: 'https', host: domaine, pathPrefix: '/connexion' }],
+      data: ['/bon', '/pesee', '/connexion', '/appel'].map((pathPrefix) => ({ scheme: 'https', host: domaine, pathPrefix })),
     }],
   },
   plugins: [

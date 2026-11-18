@@ -3,7 +3,7 @@ export { choisirRole, comptePaiement, compte, enregistrerJeton, etalModifie } fr
 export { creerReservation, payerBon, monQr, verifierBon, validerPesee, posterDemande, accepterDemande } from './reservations';
 export { publierArrivage } from './arrivages';
 export { stripeWebhook } from './stripeWebhook';
-export { envoyerMessage, messageCree } from './messages';
+export { envoyerMessage, messageCree, signaler } from './messages';
 export { jetonAppel } from './appels';
 export { taches } from './taches';
 export { coupeCircuit } from './coupeCircuit';

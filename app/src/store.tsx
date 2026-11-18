@@ -316,6 +316,12 @@ function useMagasin() {
       if (MODE_DEMO) return { lien: SITE + '/pesee/' + code + '?s=demo', pin: '482615' };
       try { const r = await B.monQr(code); return r.signature ? { lien: SITE + '/pesee/' + code + '?s=' + r.signature, pin: r.codeRetrait ?? '' } : { lien: '', pin: '' }; } catch { return { lien: '', pin: '' }; }
     },
+    // Signaler une conversation ; bloquer = plus de messages ni d'appels
+    async signaler(convId: string, motif: string, bloquer: boolean): Promise<boolean> {
+      if (MODE_DEMO) return true;
+      const c = ref.current.convs[convId];
+      try { await B.signaler(c?.uuid ?? '', motif, bloquer); await recharger(); return true; } catch (err) { erreur(err); return false; }
+    },
     // Appel par Internet : renvoie de quoi rejoindre l'appel (null en démo : appel simulé)
     async preparerAppel(convId: string): Promise<{ appId: string; canal: string; jeton: string; numero: number; autre: number; reponse: boolean } | null> {
       if (MODE_DEMO) return null;

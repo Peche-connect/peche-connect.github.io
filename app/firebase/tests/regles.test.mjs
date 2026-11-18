@@ -122,6 +122,7 @@ describe('Suivi des commandes et factures', () => {
   test('le client lit le suivi de son bon', () => assertSucceeds(getDocs(collection(qui(...CLIENT_B), 'bons/R-100/historique'))));
   test('le pêcheur aussi', () => assertSucceeds(getDoc(doc(qui(...PECHEUR), 'bons/R-100/historique/0001'))));
   test('un autre client ne le lit pas', () => assertFails(getDoc(doc(qui(...CLIENT_C), 'bons/R-100/historique/0001'))));
+  test('les signalements ne sont lisibles par personne depuis l’appli', () => assertFails(getDocs(collection(qui(...CLIENT_B), 'signalements'))));
   test('personne ne réécrit l’historique', () => assertFails(updateDoc(doc(qui(...CLIENT_B), 'bons/R-100/historique/0001'), { etape: 'annulee' })));
   test('personne n’ajoute d’étape', () => assertFails(setDoc(doc(qui(...PECHEUR), 'bons/R-100/historique/0002'), { n: 2, etape: 'retiree' })));
   test('le pro lit sa facture', () => assertSucceeds(getDoc(doc(qui(...PRO), 'factures/FA-2026-000001'))));

@@ -1,0 +1,26 @@
+{
+  "cli": { "version": ">= 14.0.0", "appVersionSource": "remote" },
+  "build": {
+    "developpement": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": { "EXPO_PUBLIC_SITE_URL": "https://peche-connect.fr" }
+    },
+    "test": {
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": { "EXPO_PUBLIC_SITE_URL": "https://peche-connect.fr" }
+    },
+    "production": {
+      "autoIncrement": true,
+      "android": { "buildType": "app-bundle" },
+      "env": { "EXPO_PUBLIC_SITE_URL": "https://peche-connect.fr" }
+    }
+  },
+  "submit": {
+    "production": {
+      "ios": { "ascAppId": "À_REMPLIR", "appleTeamId": "À_REMPLIR" },
+      "android": { "serviceAccountKeyPath": "./firebase-natif/play-console.json", "track": "internal" }
+    }
+  }
+}

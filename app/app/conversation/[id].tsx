@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BoutonAppel } from '../../src/components/BoutonAppel';
 import { Fil } from '../../src/components/Fil';
+import { Signaler } from '../../src/components/Signaler';
 import { IcCarte, IcDirect } from '../../src/components/icones';
 import { EnTete, Feuille, T, Vide } from '../../src/components/ui';
 import { useApp } from '../../src/store';
@@ -30,7 +31,7 @@ export default function ConversationPecheur() {
     <SafeAreaView edges={['top', 'bottom']} style={{ flex: 1, backgroundColor: c.fond }}>
       <EnTete titre={nom} sousTitre={'Bon ' + conv.bon} droite={<BoutonAppel id={id} />} />
       <Fil conv={conv} moi="pecheur" nomAutre={nom} rapides={['C’est prêt', 'Je vous attends', 'À tout de suite']} onEnvoyer={(t) => app.envoyer(id, t, 'pecheur')} onAudio={(a) => app.envoyerAudio(id, a, 'pecheur')}
-        avant={<Pressable onPress={() => setFeuille(true)} style={{ margin: 16, marginBottom: 0, height: 46, borderRadius: 12, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center' }}><T tresGras style={{ color: '#fff' }}>Envoyer ma position</T></Pressable>} />
+        avant={<Pressable onPress={() => setFeuille(true)} style={{ margin: 16, marginBottom: 0, height: 46, borderRadius: 12, backgroundColor: c.marine, alignItems: 'center', justifyContent: 'center' }}><T tresGras style={{ color: '#fff' }}>Envoyer ma position</T></Pressable>} apres={<Signaler id={id} />} />
       <Feuille visible={feuille} onFermer={() => setFeuille(false)} titre="Envoyer ma position">
         {option('Partager en direct', 'Jusqu’à la fin du retrait', 'direct', true)}
         {option('Envoyer ma position actuelle', 'Une seule fois', 'une-fois')}

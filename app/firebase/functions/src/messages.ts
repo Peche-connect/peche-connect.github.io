@@ -4,7 +4,7 @@
 import { getStorage } from 'firebase-admin/storage';
 import { onDocumentCreated } from 'firebase-functions/v2/firestore';
 import { onCall } from 'firebase-functions/v2/https';
-import { APPEL, connecte, db, erreur, FieldValue, limiter, REGION, Timestamp } from './commun';
+import { alerte, APPEL, connecte, db, erreur, FieldValue, limiter, REGION, Timestamp } from './commun';
 import { notifier } from './notifier';
 import { masquerNumeros, normaliser } from './regles';
 
@@ -63,4 +63,22 @@ export const messageCree = onDocumentCreated({ region: REGION, document: 'conver
   const qui = versClient ? (etal?.prenom ?? 'Le pêcheur') : conv.clientPrenom;
   const apercu = m.audio ? 'Message vocal' : m.position ? 'Position partagée' : String(m.texte ?? '').slice(0, 80);
   await notifier([versClient ? conv.clientId : conv.pecheurId], qui, apercu, { lien: versClient ? '/chat/' + conv.etalId + '|Vous' : '/conversation/' + conv.etalId + '|' + ev.params.conv });
+});
+
+// Signaler une conversation (exigé par l'App Store pour toute messagerie entre utilisateurs) et, au choix,
+// la bloquer : plus aucun message ni appel possible. Le signalement est gardé pour l'équipe (journal + alerte).
+export const signaler = onCall(APPEL, async (req) => {
+  const uid = connecte(req);
+  await limiter(uid, 'signaler', 10);
+  const d = (req.data ?? {}) as { conv?: string; motif?: string; bloquer?: boolean };
+  const convId = String(d.conv ?? '');
+  if (!/^[A-Za-z0-9]{1,40}_[A-Za-z0-9]{1,40}$/.test(convId)) throw erreur('invalid-argument', 'Conversation introuvable.');
+  const ref = db.doc('conversations/' + convId);
+  const conv = (await ref.get()).data();
+  if (!conv || !(conv.participants as string[]).includes(uid)) throw erreur('not-found', 'Conversation introuvable.');
+  const motif = normaliser(d.motif).slice(0, 300) || 'Sans précision';
+  await db.collection('signalements').add({ conv: convId, bonCode: conv.bonCode ?? null, par: uid, contre: uid === conv.pecheurId ? conv.clientId : conv.pecheurId, motif, bloquer: d.bloquer === true, le: FieldValue.serverTimestamp(), traite: false });
+  if (d.bloquer === true) await ref.update({ fermeeLe: Timestamp.now(), bloqueePar: uid });
+  await alerte(uid, 'conversation signalée', { conv: convId, motif, bloquer: d.bloquer === true });
+  return { ok: true };
 });

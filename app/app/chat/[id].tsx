@@ -4,6 +4,7 @@ import { Pressable, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { BoutonAppel } from '../../src/components/BoutonAppel';
 import { Fil } from '../../src/components/Fil';
+import { Signaler } from '../../src/components/Signaler';
 import { Itineraire } from '../../src/components/Itineraire';
 import { EnTete, Pastille, T, Vide } from '../../src/components/ui';
 import { useApp } from '../../src/store';
@@ -30,7 +31,7 @@ export default function Chat() {
             <T gris petit style={{ flex: 1 }} numberOfLines={1}>{app.resume(b.lignes)}</T>
             <Pastille texte={b.creneau} />
           </Pressable>
-        ) : <View />} />
+        ) : <View />} apres={<Signaler id={id} />} />
       <Itineraire visible={!!pos} onFermer={() => setPos(null)} lieu={(e.lieu ?? e.port) + ' · ' + (pos?.libelle ?? '')} lat={pos?.lat ?? 0} lon={pos?.lon ?? 0} />
     </SafeAreaView>
   );

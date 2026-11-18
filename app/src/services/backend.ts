@@ -328,6 +328,8 @@ async function fichierPrive(chemin: string, siAbsent: string) {
   if (res.status !== 200) throw new ErreurServeur(siAbsent);
   return res.uri;
 }
+// Signaler (et éventuellement bloquer) une conversation
+export const signaler = (conv: string, motif: string, bloquer: boolean) => fonction<{ ok: boolean }>('signaler', { conv, motif, bloquer });
 // Appel par Internet : jeton délivré par le serveur aux deux personnes de la conversation seulement
 export const jetonAppel = (conv: string) =>
   fonction<{ appId: string; canal: string; jeton: string; numero: number; autre: number; reponse: boolean }>('jetonAppel', { conv });
