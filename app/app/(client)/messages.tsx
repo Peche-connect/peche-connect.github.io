@@ -7,12 +7,13 @@ import { couleurs as c } from '../../src/theme';
 
 export default function Messages() {
   const app = useApp();
-  const convs = Object.values(app.e.convs).filter((x) => x.client === 'Vous');
+  const convs = app.e.session ? Object.values(app.e.convs).filter((x) => x.client === 'Vous') : [];
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.fond }}>
       <T tresGras style={{ fontSize: 24, padding: 16 }}>Messages</T>
       <ScrollView>
-        {!convs.length ? <Vide titre="La messagerie s’ouvre quand vous réservez" texte="Vous pourrez alors écrire au pêcheur. Les numéros restent masqués : tout passe par Pêche Connect." action="Voir les étals" onAction={() => router.navigate('/(client)')} /> : null}
+        {!app.e.session ? <Vide titre="Vos messages avec les pêcheurs" texte="Connectez-vous et réservez : vous pourrez alors écrire au pêcheur. Les numéros restent masqués." action="Se connecter" onAction={() => router.push({ pathname: '/connexion', params: { retour: '/(client)/messages' } })} /> : null}
+        {app.e.session && !convs.length ? <Vide titre="La messagerie s’ouvre quand vous réservez" texte="Vous pourrez alors écrire au pêcheur. Les numéros restent masqués : tout passe par Pêche Connect." action="Voir les étals" onAction={() => router.navigate('/(client)')} /> : null}
         {convs.map((cv) => {
           const e = app.etal(cv.etalId); const der = cv.messages[cv.messages.length - 1];
           return (

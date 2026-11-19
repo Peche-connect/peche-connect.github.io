@@ -77,7 +77,7 @@ export default function Compte() {
             <T gris petit>Vérifier les pêcheurs, traiter les signalements, retrouver les factures.</T>
           </Pressable>
         ) : null}
-        <Bouton titre="Me déconnecter" onPress={async () => { await app.deconnecter(); router.replace('/connexion'); }} />
+        <Bouton titre="Me déconnecter" onPress={async () => { await app.deconnecter(); router.replace('/(client)'); }} />
         {MODE_DEMO ? <Bouton clair titre="Recommencer la démo (tout effacer)" onPress={() => { app.reinitialiser(); router.replace('/connexion'); }} /> : null}
 
         <Ligne style={{ marginVertical: 4 }} />

@@ -52,7 +52,11 @@ export default function SortieClient() {
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                   <Stepper valeur={kg(q)} onMoins={() => setQte((m) => ({ ...m, [x.espece]: Math.max(0.5, q - (pro ? 1 : 0.5)) }))} onPlus={() => setQte((m) => ({ ...m, [x.espece]: Math.min(reste, max, q + (pro ? 1 : 0.5)) }))} />
                   <Bouton titre={'Réserver ' + kg(q)} desactive={!!envoi} style={{ flex: 1, height: 46 }}
-                    onPress={async () => { setEnvoi(x.espece); await app.precommander(s.etalId, x.espece, q); setEnvoi(''); }} />
+                    onPress={async () => {
+                      // visiteur sans compte : on lui demande de se connecter, puis il revient ici
+                      if (!app.e.session) { router.push({ pathname: '/connexion', params: { retour: '/sortie/' + s.etalId } }); return; }
+                      setEnvoi(x.espece); await app.precommander(s.etalId, x.espece, q); setEnvoi('');
+                    }} />
                 </View>
               )}
             </View>
