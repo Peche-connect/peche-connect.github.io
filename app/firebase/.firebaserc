@@ -1,1 +1,7 @@
-{ "projects": { "default": "peche-connect" } }
+{
+  "projects": {
+    "default": "peche-connect",
+    "production": "peche-connect",
+    "recette": "peche-connect-recette"
+  }
+}

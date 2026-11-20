@@ -1,7 +1,8 @@
 # Pêche Connect · mise en service (le jour où la société a sa carte bancaire)
 
 Tout est prêt dans le code et testé automatiquement à chaque envoi sur GitHub (91 tests serveur et un
-parcours complet client / pêcheur dans un vrai navigateur). Il ne reste qu'à **créer les comptes au nom
+parcours complet client / pêcheur dans un vrai navigateur). Commencer par la **section 0** (nom de domaine
+et comptes). Ensuite, il ne reste qu'à **créer les comptes au nom
 de la société** et à brancher. Tant que ce n'est pas fait, le site reste en **mode démo** (rien ne casse).
 
 Choix retenus : site sur **Cloudflare Pages**, serveur sur **Firebase** (Paris), paiement **Stripe Connect**,
@@ -12,6 +13,40 @@ société (ex. pecheconnect.martinique@gmail.com) avec la **validation en deux �
 
 ---
 
+## 0. Nom de domaine et comptes : le passeport de la société
+
+Qui contrôle `peche-connect.fr` contrôle les e-mails de la société, donc peut réinitialiser les mots de
+passe, recevoir les liens de connexion de l'appli, détourner le site et les liens de l'appli
+(`.well-known`). À protéger avant tout le reste.
+
+1. **Titulaire du domaine = la SARL** (pas une personne). Si le domaine a été acheté avant la création de
+   la société, faire le **changement de titulaire** chez IONOS (procédure AFNIC pour un `.fr`) dès le Kbis.
+   Vérifier que les coordonnées du titulaire sont exactes (l'AFNIC peut supprimer un domaine dont le
+   titulaire est injoignable).
+2. **Compte IONOS** : validation en deux étapes, Louis ajouté comme second administrateur, e-mail du compte
+   = le **Gmail de la société** (surtout pas une adresse `@peche-connect.fr` : si le domaine expire ou est
+   détourné, on ne recevrait plus les alertes qui permettent de le récupérer).
+3. **Verrou de transfert** activé chez IONOS si l'option existe pour le `.fr` (le domaine ne peut pas partir
+   chez un autre bureau d'enregistrement sans déverrouillage manuel) ; ne jamais communiquer le code de
+   transfert (« code AUTH »).
+4. **Renouvellement automatique** + payer **plusieurs années d'avance** ; noter dans l'agenda des deux
+   associés la date d'expiration de la carte bancaire utilisée.
+5. **Cloudflare** (qui gère le DNS, section 5) : validation en deux étapes, deux membres, aucun jeton d'accès
+   inutile ; activer **DNSSEC** (Cloudflare > DNS > Paramètres) puis recopier l'enregistrement DS chez IONOS.
+6. **E-mails qui arrivent (et pas en indésirable)** : dans Cloudflare, en plus des MX de Zoho (section 6) :
+   - SPF : la ligne que Zoho affiche (de la forme `v=spf1 include:… ~all`), **une seule** ligne SPF pour le domaine ;
+   - DKIM : la clé que Zoho affiche ;
+   - DMARC : `TXT _dmarc "v=DMARC1; p=none; rua=mailto:contact@peche-connect.fr"`, puis `p=quarantine`
+     après deux semaines sans problème dans les rapports.
+   - Liens de connexion de l'appli envoyés **depuis le domaine** : Firebase > Authentication > Modèles >
+     *Personnaliser le domaine* → ajouter dans Cloudflare les enregistrements indiqués.
+7. **Propriété des comptes** : sur chaque console (Google Cloud / Firebase, Stripe, Apple, Google Play,
+   Cloudflare, IONOS, Zoho, Expo, Agora, GitHub), **deux propriétaires** (les deux associés), validation en
+   deux étapes partout, identifiant = Gmail de la société ou adresse nominative de chaque associé, jamais
+   un Gmail personnel seul. Les codes de secours sont imprimés et rangés chez chacun des deux.
+8. **Ne jamais coller une clé secrète dans une conversation** (y compris avec Claude) : les clés vont
+   directement dans les secrets Firebase (section 3) ou les variables EAS.
+
 ## 1. Firebase (20 min)
 
 1. console.firebase.google.com avec le Gmail de la société → **Ajouter un projet** → nom `peche-connect`
@@ -20,7 +55,8 @@ société (ex. pecheconnect.martinique@gmail.com) avec la **validation en deux �
    les fonctions serveur et les fichiers, mais on reste dans la partie gratuite. **Créer tout de suite une
    alerte de budget à 10 €** (Google Cloud > Facturation > Budgets et alertes).
 3. **Firestore Database** → Créer → mode production → emplacement **europe-west9 (Paris)**.
-4. **Storage** → Commencer → même emplacement.
+4. **Storage** → Commencer → **même emplacement europe-west9** (obligatoire : la fonction qui efface la
+   position GPS des photos tourne à Paris et doit être dans la même région que les fichiers).
 5. **Authentication** → Commencer → Méthodes de connexion : activer **Google** et **Adresse e-mail /
    Lien par e-mail (connexion sans mot de passe)**. Apple plus tard (compte Apple Developer, 99 $/an).
    Paramètres > Domaines autorisés : ajouter `peche-connect.fr` et l'adresse Cloudflare (`peche-connect.pages.dev`).
@@ -38,8 +74,20 @@ société (ex. pecheconnect.martinique@gmail.com) avec la **validation en deux �
 1. Compte Stripe au nom de la société (Kbis, IBAN pro), puis **Connect** → comptes **Express**.
 2. Clé secrète : **Développeurs > Clés API** (`sk_test_…` pour les essais, puis `sk_live_…`).
 3. **Développeurs > Webhooks** → endpoint `https://europe-west9-peche-connect.cloudfunctions.net/stripeWebhook`,
-   événements `checkout.session.completed`, `checkout.session.expired`, `payment_intent.canceled` ;
-   un 2e endpoint identique coché **« Comptes connectés »** avec `account.updated`. Noter les deux `whsec_…`.
+   événements `checkout.session.completed`, `checkout.session.expired`, `payment_intent.canceled`,
+   `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed` ;
+   un 2e endpoint identique coché **« Comptes connectés »** avec `account.updated`, `payout.failed`,
+   `payout.paid`. Noter les deux `whsec_…`.
+4. **Ce que coûte Stripe Connect (à intégrer dans la commission, à vérifier sur stripe.com/fr/connect/pricing)** :
+   avec des comptes Express et des paiements « destination », c'est la société qui paie les frais de carte
+   (environ 1,5 % + 0,25 € par carte européenne), **2 € par pêcheur actif et par mois**, et **0,25 % + 0,10 €
+   par virement** vers un pêcheur. Les virements sont quotidiens par défaut (`settings.payouts` dans
+   `functions/src/comptes.ts`) : passer en hebdomadaire divise ces frais par 5, à décider entre associés.
+   La société porte aussi le risque des **litiges** (20 € de frais par litige, répondre dans le tableau de
+   bord Stripe avant la date limite : l'espace équipe affiche un signalement « LITIGE BANCAIRE »).
+5. **Comptabilité** : Stripe est la source de vérité. Chaque paiement porte le code du bon dans ses
+   métadonnées (`code`), ce qui permet au logiciel comptable (Pennylane, Tiime… avec connecteur Stripe, à
+   choisir avec l'expert-comptable) de rapprocher chaque paiement, commission, remboursement et virement.
 
 ## 3. Envoyer le serveur sur Firebase
 
@@ -120,6 +168,18 @@ Firebase n'a pas de plafond automatique : un robot ou une erreur pourrait faire 
 
 ## 9. Surveillance et sauvegardes
 
+- **Contrôle de la nuit (automatique, 4 h 30)** : la fonction `controle` compare chaque paiement Stripe des
+  3 derniers jours avec la base (empreinte bloquée ↔ bon payé, encaissé ↔ bon retiré, montants et commission
+  identiques), corrige seule les cas sûrs (empreinte restée bloquée sur un bon annulé : libérée) et vérifie
+  les contraintes de la base (stocks jamais négatifs, encaissé ≤ bloqué, remboursé ≤ encaissé, suivi des
+  commandes intact, réservations avant sortie cohérentes, factures numérotées sans trou). Résultat dans
+  l'**espace équipe** (« Contrôle de la nuit », bouton « Refaire le contrôle ») et alerte e-mail s'il y a
+  une anomalie.
+- **Disponibilité** : UptimeRobot ou Better Stack (gratuits), deux sondes toutes les 5 min : le site
+  `https://peche-connect.fr` et `https://europe-west9-peche-connect.cloudfunctions.net/sante` (répond 200 si
+  les tâches automatiques ont tourné dans le dernier quart d'heure, 503 sinon). Alerte par e-mail / SMS.
+- **Erreurs de l'appli** (plus tard, optionnel) : Sentry (offre gratuite) ; les erreurs du serveur sont déjà
+  dans Google Cloud Logging avec l'alerte ci-dessous.
 - **Alerte sécurité par e-mail** : Google Cloud > Logging > *Créer une alerte basée sur les journaux*,
   requête `textPayload:"ALERTE_SECURITE" OR jsonPayload.message:"ALERTE_SECURITE"`, notification par
   e-mail aux deux associés. Elle se déclenche sur : faux paiement Stripe rejeté, faux QR, messages en rafale,
@@ -135,6 +195,20 @@ Firebase n'a pas de plafond automatique : un robot ou une erreur pourrait faire 
 - Validation en deux étapes sur **tous** les comptes (Gmail, Firebase, Stripe, Cloudflare, GitHub, Zoho, IONOS).
 - GitHub > Settings > Code security : *Dependabot alerts* et *Secret scanning* activés.
 - En cas de fuite de données : prévenir la CNIL sous 72 h.
+
+## 9 bis. Environnement de recette (essais sans risque)
+
+Ne jamais essayer une nouveauté directement sur la vraie base. Un second projet Firebase sert aux essais :
+1. Créer le projet **`peche-connect-recette`** (mêmes étapes que la section 1, forfait Blaze avec une
+   alerte de budget à 5 €), avec les clés **Stripe en mode test** (`sk_test_…`, webhooks de test).
+2. Envoyer le serveur dessus : `npx firebase-tools deploy --project recette` (les alias `production` et
+   `recette` sont dans `app/firebase/.firebaserc`).
+3. Appli : profil EAS **`test`** = variables d'environnement EAS « preview » (configuration Firebase de la
+   recette) ; profil **`production`** = variables « production ». Site de recette : une 2e page Cloudflare
+   (branche `recette`) avec la configuration de recette.
+4. Ensuite seulement : `deploy --project production`.
+5. Plus tard : activer **EAS Update** (installer `expo-updates`) pour corriger l'appli installée sans
+   attendre la validation des magasins.
 
 ## 10. Appli iPhone et Android : publication sur l'App Store et Google Play
 

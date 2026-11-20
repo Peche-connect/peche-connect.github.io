@@ -593,7 +593,8 @@ describe('Argent, contrôles et photos', () => {
   });
   test('contrôle quotidien : rapprochement Stripe et contraintes de la base respectées', async () => {
     const r = await appeler('equipe', 'equipeControler', {});
-    assert.deepEqual(r.integrite.erreurs, [], 'aucune contrainte violée');
+    // seule anomalie : la commande dont une étape a été supprimée exprès plus haut (test de la chaîne d'empreintes)
+    assert.deepEqual(r.integrite.erreurs, ['bon ' + code2 + ' : suivi de commande modifié ou incomplet']);
     assert.ok(r.integrite.bons > 5);
     assert.ok(await lire('controles/' + r.jour));
     // une contrainte violée est détectée : stock négatif
@@ -601,6 +602,7 @@ describe('Argent, contrôles et photos', () => {
     await db.doc('etals/' + etalId).update({ produits: [{ ...e.produits[0], dispoKg: -1 }, ...e.produits.slice(1)] });
     const r2 = await appeler('equipe', 'equipeControler', {});
     assert.ok(r2.integrite.erreurs.some((m) => /stock négatif/.test(m)));
+    assert.equal(r2.ok, false); assert.ok((await lire('controles/' + r2.jour)).anomalies >= 2);
     await db.doc('etals/' + etalId).update({ produits: e.produits });
   });
   test('export annuel DAC7 pour la déclaration des plateformes', async () => {
