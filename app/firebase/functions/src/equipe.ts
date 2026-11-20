@@ -24,12 +24,17 @@ const date = (x: unknown) => (x as { toDate?: () => Date })?.toDate?.()?.toISOSt
 // Tout ce qui attend l'équipe, en un appel
 export const equipeTableau = onCall(APPEL, async (req) => {
   await membreEquipe(req);
-  const [attente, signalements, factures, avis] = await Promise.all([
+  const [attente, signalements, factures, avis, controles, avoirs] = await Promise.all([
     db.collection('etals').where('statut', '==', 'en_attente').limit(50).get(),
     db.collection('signalements').where('traite', '==', false).limit(50).get(),
     db.collection('factures').orderBy('emiseLe', 'desc').limit(30).get(),
     db.collection('avis').orderBy('le', 'desc').limit(30).get(),
+    db.collection('controles').orderBy('jour', 'desc').limit(1).get(),
+    db.collection('avoirsAEmettre').limit(30).get(),
   ]);
+  const c = controles.docs[0]?.data();
+  const controle = c ? { jour: c.jour, ok: c.ok, anomalies: c.anomalies, verifies: c.rapprochement?.verifies ?? 0,
+    ecarts: (c.rapprochement?.ecarts ?? []).slice(0, 20), erreurs: (c.integrite?.erreurs ?? []).slice(0, 20) } : null;
   const dossiers = await Promise.all(attente.docs.map(async (d) => {
     const e = d.data();
     const [prive, dossier] = await Promise.all([d.ref.collection('prive').doc('infos').get(), d.ref.collection('verification').doc('dossier').get()]);
@@ -50,6 +55,8 @@ export const equipeTableau = onCall(APPEL, async (req) => {
   }));
   return {
     dossiers, signalements: sig.sort((a, b) => String(b.le).localeCompare(String(a.le))),
+    controle,
+    avoirs: avoirs.docs.map((d) => { const a = d.data(); return { id: d.id, facture: a.facture, bon: a.bon, montant: a.montant, motif: a.motif }; }),
     avis: avis.docs.map((d) => { const a = d.data(); return { code: d.id, etalId: a.etalId, prenom: a.prenom, note: a.note, commentaire: a.commentaire, le: date(a.le) }; }),
     factures: factures.docs.map((d) => { const f = d.data(); return { numero: f.numero, bon: f.bon, emiseLe: f.emiseLe, acheteur: f.acheteur?.raison ?? '', vendeur: f.vendeur?.prenom ?? '', totalTtc: f.totalTtc }; }),
   };

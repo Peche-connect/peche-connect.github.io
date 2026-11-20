@@ -6,6 +6,8 @@ export { stripeWebhook } from './stripeWebhook';
 export { envoyerMessage, messageCree, signaler } from './messages';
 export { jetonAppel } from './appels';
 export { taches } from './taches';
+export { photoDeposee } from './photos';
+export { equipeRembourser, controle, equipeControler, equipeDac7, sante } from './paiements';
 export { annulerParClient, annulerParPecheur, clientAbsent } from './annulations';
 export { annoncerSortie, precommander, annulerPrecommande, annulerSortie } from './sorties';
 export { laisserAvis, equipeRetirerAvis } from './avis';

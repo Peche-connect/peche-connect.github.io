@@ -77,6 +77,7 @@ export type Bon = {
   facture?: string; // numéro de facture (pros), ex. FA-2026-000001
   avis?: number; // note donnée par le client après le retrait (1 à 5)
   origine?: 'panier' | 'demande' | 'sortie'; // sortie = réservé avant le retour du pêcheur
+  rembourse?: number; // montant remboursé par l'équipe après une réclamation
 };
 
 // Sortie en mer annoncée par un pêcheur : les clients réservent avant son retour

@@ -63,6 +63,11 @@ export async function lancerTaches(maintenant = Date.now()) {
   for (const b of sansFacture.docs) if (b.data().pro && (await emettreFacture(b.id).catch(() => null))) bilan.factures++;
   const sansPdf = await db.collection('factures').where('pdf', '==', false).limit(20).get();
   for (const f of sansPdf.docs) await archiverPdf(f.id).catch(() => null);
+  // 6. messages Stripe mémorisés (anti-doublon) : gardés 30 jours
+  const vieux = await db.collection('evenementsStripe').where('le', '<', Timestamp.fromMillis(maintenant - 30 * 86400_000)).limit(200).get();
+  for (const e of vieux.docs) await e.ref.delete();
+  // battement de cœur : lu par l'adresse de santé (surveillance externe)
+  await db.doc('etat/taches').set({ derniereExecution: Timestamp.fromMillis(maintenant), bilan });
   return bilan;
 }
 

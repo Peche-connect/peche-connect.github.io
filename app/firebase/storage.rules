@@ -3,12 +3,15 @@ rules_version = '2';
 service firebase.storage {
   match /b/{seau}/o {
 
-    // Photos des arrivages : publiques ; seul le pêcheur de l'étal dépose (image, 5 Mo max)
+    // Photos des arrivages : publiques UNE FOIS NETTOYÉES par le serveur (position GPS et autres
+    // métadonnées effacées, fonction photoDeposee) ; l'original n'est jamais lisible.
+    // Seul le pêcheur de l'étal dépose (image, 5 Mo max), sans pouvoir se déclarer « nettoyé ».
     match /arrivages/{etal}/{fichier} {
-      allow read: if true;
+      allow read: if resource.metadata != null && resource.metadata.nettoye == '1';
       allow create: if request.auth != null && request.auth.token.etalId == etal
         && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+        && request.resource.contentType.matches('image/(jpeg|png|webp)')
+        && (request.resource.metadata == null || !('nettoye' in request.resource.metadata));
     }
 
     // Messages vocaux : privés, seulement les deux participants de la conversation (2 Mo max)

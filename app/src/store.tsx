@@ -681,7 +681,7 @@ function useMagasin() {
     mesDemandes: () => e.demandes.filter((d) => d.auteur === 'Vous'),
     // un pro ne voit pas ses propres besoins ici ; en démo, le pêcheur voit aussi ceux publiés depuis ce téléphone
     demandesOuvertes: () => e.demandes.filter((d) => d.statut === 'ouverte' && !(e.session?.pro && d.auteur === 'Vous')),
-    bonsPecheur: (etalId?: string) => e.bons.filter((b) => b.etalId === etalId && b.statut !== 'a_payer'),
+    bonsPecheur: (etalId?: string) => e.bons.filter((b) => b.etalId === etalId && b.statut !== 'a_payer' && b.statut !== 'annule'),
     sortie: (etalId?: string) => e.sorties.find((s) => s.etalId === etalId && s.statut === 'annoncee'),
     sortiesOuvertes: () => e.sorties.filter((s) => s.statut === 'annoncee' && s.etalId !== e.session?.etalId),
     mesPrecommandes: () => e.precommandes.filter((p) => p.mienne),

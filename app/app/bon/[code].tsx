@@ -31,6 +31,16 @@ export default function BonEcran() {
   if (!e) return <SafeAreaView style={{ flex: 1 }}><EnTete titre={'Bon ' + b.code} fermer /><Vide titre="Étal indisponible" texte="Ce pêcheur n’est plus sur Pêche Connect. Votre bon reste dans « Mes bons »." /></SafeAreaView>;
   const p = PORTS[e.port] ?? PORTS['Le Robert'];
   const retire = b.statut === 'retire';
+  if (b.statut === 'annule') return (
+    <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
+      <EnTete titre={'Bon ' + b.code} sousTitre="Réservation annulée" fermer />
+      <View style={{ padding: 16, gap: 10 }}>
+        <T tresGras style={{ fontSize: 18 }}>Cette réservation est annulée.</T>
+        <T>{b.montantPaye ? euro(b.montantPaye) + ' ont été débités (client absent, règles d’annulation). Le reste de l’empreinte bancaire est libéré.' : 'Rien ne vous a été débité.'}</T>
+        <Suivi code={b.code} statut={b.statut} />
+      </View>
+    </SafeAreaView>
+  );
   if (b.statut === 'a_payer') return (
     <SafeAreaView style={{ flex: 1, backgroundColor: c.fond }}>
       <EnTete titre={'Commande ' + b.code} sousTitre={'Étal de ' + e.pecheur + ' · ' + e.port} fermer />
@@ -72,6 +82,7 @@ export default function BonEcran() {
           <Ligne />
           {b.lignes.map((l) => <View key={cleLigne(l)} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}><T style={{ flex: 1 }}>{libelleLigne(l)}{preparationLigne(l) ? ', ' + preparationLigne(l) : ''}</T><T tresGras>{quantiteLigne(l, retire)}</T></View>)}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>{retire ? 'Payé (poids réel)' : 'Montant bloqué'}</T><T tresGras>{retire ? euro(b.montantPaye ?? 0) : euro(b.montantBloque) + ' max'}</T></View>
+          {b.rembourse ? <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>Remboursé</T><T tresGras style={{ color: c.vert }}>{euro(b.rembourse)}</T></View> : null}
         </View>
         {b.pro ? (() => {
           const ttc = retire ? b.montantPaye ?? 0 : b.montantBloque; const t = detailTva(ttc);

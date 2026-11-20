@@ -32,6 +32,10 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
     return;
   }
 
+  // même message reçu deux fois (Stripe réessaie tant qu'il n'a pas eu de réponse) : traité une seule fois
+  const memo = db.doc('evenementsStripe/' + ev.id);
+  if ((await memo.get()).exists) { res.json({ recu: true, deja: true }); return; }
+
   try {
     switch (ev.type) {
       case 'checkout.session.completed': {
@@ -86,6 +90,60 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
         await annulerBon(code, 'empreinte bancaire expirée ou annulée', { uid: null, role: 'stripe' });
         break;
       }
+      case 'charge.refunded': {
+        // remboursement (fait par l'équipe, ou directement depuis le tableau de bord Stripe) : noté sur le bon
+        const ch = ev.data.object;
+        const code = await codeDuPaiement(ch.metadata?.code, ch.payment_intent);
+        if (!code) break;
+        const rembourse = Math.round(ch.amount_refunded) / 100;
+        await db.runTransaction(async (t) => {
+          const ref = db.doc('bons/' + code); const b = (await t.get(ref)).data();
+          if (!b || b.remboursementEnCours) return; // remboursement lancé par l'équipe : déjà noté
+          if (Math.abs(Number(b.rembourse ?? 0) - rembourse) < 0.001) return;
+          t.update(ref, { rembourse, ...(rembourse >= Number(b.montantPaye ?? 0) - 0.001 ? { statut: 'rembourse' } : {}),
+            ...ajouterEtape(t, code, b, 'remboursee', { uid: null, role: 'stripe' }, { cumul: rembourse, origine: 'tableau de bord Stripe' }) });
+        });
+        break;
+      }
+      case 'charge.dispute.created':
+      case 'charge.dispute.closed': {
+        // contestation par la banque du client : la plateforme est débitée (+ 20 € de frais) ; l'équipe doit répondre
+        const dp = ev.data.object;
+        const pi = typeof dp.payment_intent === 'string' ? dp.payment_intent : dp.payment_intent?.id;
+        const code = await codeDuPaiement(undefined, pi);
+        const litige = { id: dp.id, statut: dp.status, montant: dp.amount / 100, raison: dp.reason, majLe: FieldValue.serverTimestamp() };
+        if (code) {
+          await db.runTransaction(async (t) => {
+            const ref = db.doc('bons/' + code); const b = (await t.get(ref)).data();
+            if (!b) return;
+            t.update(ref, { litige, ...(ev.type === 'charge.dispute.created' ? ajouterEtape(t, code, b, 'litige', { uid: null, role: 'stripe' }, { montant: litige.montant, raison: dp.reason }) : {}) });
+          });
+        }
+        if (ev.type === 'charge.dispute.created') {
+          await db.collection('signalements').add({ conv: null, bonCode: code, par: null, contre: null, bloquer: false, traite: false, le: FieldValue.serverTimestamp(),
+            motif: 'LITIGE BANCAIRE ' + (dp.amount / 100).toFixed(2) + ' € (' + dp.reason + ') : répondre dans le tableau de bord Stripe avant la date limite' });
+        }
+        await alerte(null, 'litige bancaire ' + dp.status, { code, litige: dp.id, montant: dp.amount / 100 });
+        break;
+      }
+      case 'payout.failed': {
+        // virement vers le pêcheur refusé par sa banque (RIB fermé…) : il doit corriger dans son compte de paiement
+        if (!ev.account) break;
+        const q = await db.collection('comptesStripe').where('compte', '==', ev.account).limit(1).get();
+        if (q.empty) break;
+        const etalId = q.docs[0].id;
+        await db.doc('etals/' + etalId).update({ versementEchoue: true });
+        const e = (await db.doc('etals/' + etalId).get()).data();
+        if (e?.pecheurId) await notifier([e.pecheurId], 'Virement refusé par votre banque', 'Vérifiez votre RIB dans « Mon compte de paiement ». L’argent reste en attente chez Stripe.');
+        await alerte(null, 'virement pêcheur échoué', { etalId, montant: ev.data.object.amount / 100 });
+        break;
+      }
+      case 'payout.paid': {
+        if (!ev.account) break;
+        const q = await db.collection('comptesStripe').where('compte', '==', ev.account).limit(1).get();
+        if (!q.empty) await db.doc('etals/' + q.docs[0].id).update({ versementEchoue: false });
+        break;
+      }
       case 'account.updated': {
         // compte de paiement du pêcheur prêt quand Stripe a tout vérifié
         const a = ev.data.object;
@@ -96,8 +154,20 @@ export const stripeWebhook = onRequest({ region: REGION, secrets: [STRIPE_SECRET
     }
   } catch (e) {
     console.error(e);
+    await alerte(null, 'webhook Stripe en échec (Stripe réessaiera)', { type: ev.type, id: ev.id, erreur: String(e).slice(0, 200) }).catch(() => null);
     res.status(500).send('Erreur'); // Stripe réessaiera
     return;
   }
+  await memo.set({ type: ev.type, le: FieldValue.serverTimestamp() });
   res.json({ recu: true });
 });
+
+// Retrouve le bon d'un paiement : métadonnée du paiement (copiée par Stripe), sinon lecture du paiement
+async function codeDuPaiement(code: string | undefined, paiement: string | Stripe.PaymentIntent | null | undefined) {
+  if (code && CODE_BON_OK(code)) return code;
+  const id = typeof paiement === 'string' ? paiement : paiement?.id;
+  if (!id) return null;
+  const pi = await stripe().paymentIntents.retrieve(id).catch(() => null);
+  const c = pi?.metadata?.code;
+  return c && CODE_BON_OK(c) ? c : null;
+}

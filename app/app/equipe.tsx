@@ -20,6 +20,8 @@ const DEMO: Tableau = {
     { id: 's1', conv: 'jm_x', bonCode: 'R-12', motif: 'Le pêcheur me demande de payer en liquide en dehors de l’appli.', bloquer: false, le: new Date().toISOString(), par: { prenom: 'Sophie', role: 'client' }, contre: { prenom: 'Jean-Marc', role: 'pêcheur' } },
   ],
   avis: [{ code: 'R-9', etalId: 'jm', prenom: 'Kévin', note: 1, commentaire: 'Nul !!! appelez-moi au •• •• •• •• ••', le: new Date().toISOString() }],
+  controle: { jour: new Date().toISOString().slice(0, 10), ok: true, anomalies: 0, verifies: 42, ecarts: [], erreurs: [] },
+  avoirs: [],
   factures: [{ numero: 'FA-2026-000001', bon: 'R-31', emiseLe: new Date().toISOString(), acheteur: 'Le Comptoir du Port', vendeur: 'Jean-Marc', totalTtc: 182.4 }],
 };
 const MOTIFS = ['Numéro de marin introuvable', 'Immatriculation ne correspond pas', 'Pièce illisible : à renvoyer', 'Pas pêcheur professionnel'];
@@ -54,6 +56,25 @@ export default function Equipe() {
   const signalement = (s: B.SignalementEquipe, decision: 'classer' | 'suspendre') =>
     agir(() => B.equipeSignalement(s.id, decision), (x) => ({ ...x, signalements: x.signalements.filter((y) => y.id !== s.id) }),
       decision === 'classer' ? 'Signalement classé.' : 'Compte de ' + s.contre.prenom + ' suspendu.');
+  const [remb, setRemb] = useState({ code: '', montant: '', motif: '' });
+  const controler = () => agir(async () => { const r = await B.equipeControler(); setInfo(r.ok ? 'Contrôle refait : tout est cohérent.' : r.anomalies + ' anomalie(s) : voir ci-dessous.'); },
+    (x) => x, 'Contrôle refait : tout est cohérent.');
+  const rembourser = () => {
+    const montant = remb.montant ? Number(remb.montant.replace(',', '.')) : undefined;
+    agir(() => B.equipeRembourser(remb.code.trim().toUpperCase(), remb.motif.trim(), montant), (x) => x,
+      'Remboursement de ' + remb.code.toUpperCase() + ' envoyé : le client est prévenu, la part du pêcheur et la commission sont reprises.');
+    setRemb({ code: '', montant: '', motif: '' });
+  };
+  const dac7 = async (annee: number) => {
+    if (MODE_DEMO) { setInfo('Démo : l’export DAC7 est produit par le serveur une fois l’appli branchée.'); return; }
+    try {
+      const r = await B.equipeDac7(annee);
+      if (Platform.OS === 'web') { const a = document.createElement('a'); a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent('\ufeff' + r.csv); a.download = r.nom; a.click(); }
+      setInfo(r.vendeurs + ' vendeur(s) dans l’export ' + annee + '.');
+    } catch (e) { setInfo((e as Error).message); }
+  };
+  const champ = { borderWidth: 1, borderColor: c.ligne, borderRadius: 12, padding: 12, fontFamily: f.normal, color: c.texte } as const;
+
   const facture = async (numero: string) => {
     if (MODE_DEMO) { setInfo('Démo : le PDF est créé par le serveur une fois l’appli branchée.'); return; }
     try {
@@ -72,6 +93,16 @@ export default function Equipe() {
       {!t ? <Vide titre="Chargement…" texte="" perso={false} /> : (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }}>
           {info ? <View style={{ backgroundColor: c.doux, borderRadius: 12, padding: 12 }}><T gras>{info}</T></View> : null}
+
+          <View style={{ borderWidth: 1, borderColor: t.controle && !t.controle.ok ? c.alerte : c.ligne, borderRadius: 14, padding: 14, gap: 6 }}>
+            <T tresGras style={{ fontSize: 16 }}>Contrôle de la nuit {t.controle ? '· ' + t.controle.jour : ''}</T>
+            {!t.controle ? <T gris>Pas encore de contrôle (il tourne chaque nuit à 4 h 30).</T> : t.controle.ok
+              ? <T style={{ color: c.vert }}>Tout est cohérent : {t.controle.verifies} paiements Stripe rapprochés, contraintes de la base respectées.</T>
+              : <T gras style={{ color: c.alerte }}>{t.controle.anomalies} anomalie(s) à regarder :</T>}
+            {t.controle?.ecarts.map((x, i) => <T key={'e' + i} petit>{x.corrige ? '✓ corrigé · ' : '• '}{x.code} : {x.probleme} (Stripe : {x.stripe}, base : {x.base})</T>)}
+            {t.controle?.erreurs.map((x, i) => <T key={'i' + i} petit>• {x}</T>)}
+            <Pressable onPress={controler} disabled={occupe} accessibilityRole="button"><T tresGras style={{ color: c.marine }}>Refaire le contrôle maintenant</T></Pressable>
+          </View>
 
           <T tresGras style={{ fontSize: 18 }}>Pêcheurs à vérifier ({t.dossiers.length})</T>
           <T gris petit>Avant de valider : contrôlez le numéro de marin (registre des marins, Direction de la mer) et l’immatriculation du bateau (carte de circulation / rôle d’équipage).</T>
@@ -117,6 +148,23 @@ export default function Equipe() {
               <T tresGras>{euro(x.totalTtc)}</T>
             </Pressable>
           )) : <T gris>Aucune facture émise.</T>}
+          {t.avoirs.length ? <T gras style={{ color: c.alerte }}>{t.avoirs.length} avoir(s) à émettre après remboursement d’un pro (voir l’expert-comptable) : {t.avoirs.map((a) => a.facture + ' (' + euro(a.montant) + ')').join(', ')}</T> : null}
+
+          <T tresGras style={{ fontSize: 18, marginTop: 10 }}>Rembourser un client</T>
+          <T gris petit>Après une réclamation (poisson abîmé, erreur de pesée). Le pêcheur rend sa part, la commission est rendue. Laissez le montant vide pour tout rembourser.</T>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TextInput value={remb.code} onChangeText={(v) => setRemb((x) => ({ ...x, code: v }))} placeholder="Bon (R-123)" autoCapitalize="characters" accessibilityLabel="Code du bon" style={[champ, { flex: 1 }]} />
+            <TextInput value={remb.montant} onChangeText={(v) => setRemb((x) => ({ ...x, montant: v }))} placeholder="Montant €" keyboardType="decimal-pad" accessibilityLabel="Montant" style={[champ, { width: 110 }]} />
+          </View>
+          <TextInput value={remb.motif} onChangeText={(v) => setRemb((x) => ({ ...x, motif: v }))} placeholder="Motif (envoyé au pêcheur)" maxLength={200} accessibilityLabel="Motif du remboursement" style={champ} />
+          <Bouton clair titre="Rembourser" desactive={!/^R-\d+$/i.test(remb.code.trim()) || !remb.motif.trim() || occupe} onPress={rembourser} />
+
+          <T tresGras style={{ fontSize: 18, marginTop: 10 }}>Déclaration des plateformes (DAC7)</T>
+          <T gris petit>Ventes de chaque pêcheur sur l’année, avec l’identité vérifiée par Stripe, à déclarer à la DGFiP avant le 31 janvier et à envoyer à chaque pêcheur.</T>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {[new Date().getFullYear() - 1, new Date().getFullYear()].filter((a) => a >= 2026).map((a) => <Chip key={a} titre={'Export ' + a} onPress={() => dac7(a)} />)}
+          </View>
+
           <T gris petit>Gestion avancée (réglages, montants, fermetures d’espèces) : console Firebase. Voir MISE-EN-SERVICE.md.</T>
         </ScrollView>
       )}

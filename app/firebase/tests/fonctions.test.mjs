@@ -34,7 +34,7 @@ async function appeler(nom, fonction, data) {
   return j.result;
 }
 async function webhook(evenement, secret = WHSEC) {
-  const corps = JSON.stringify({ id: 'evt_' + Date.now(), object: 'event', api_version: '2025-02-24.acacia', ...evenement });
+  const corps = JSON.stringify({ id: 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2), object: 'event', api_version: '2025-02-24.acacia', ...evenement });
   return fetch(FONCTIONS + 'stripeWebhook', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Stripe-Signature': stripe.webhooks.generateTestHeaderString({ payload: corps, secret }) }, body: corps });
 }
 async function attendre(f, ms = 15000) { // les déclencheurs (triggers) tournent en arrière-plan
@@ -554,6 +554,78 @@ describe('Espace équipe', () => {
     assert.ok(t.factures.length >= 1);
     const f = await appeler('equipe', 'equipeFacture', { numero: t.factures[0].numero });
     assert.equal(Buffer.from(f.pdf, 'base64').subarray(0, 4).toString(), '%PDF');
+  });
+});
+
+describe('Argent, contrôles et photos', () => {
+  const fn = createRequire(new URL('../functions/package.json', import.meta.url));
+  test('un même message Stripe reçu deux fois n’est traité qu’une fois', async () => {
+    const ev = { id: 'evt_double_1', type: 'payout.failed', account: 'acct_inconnu', data: { object: { id: 'po_1', object: 'payout', amount: 1000 } } };
+    assert.equal((await (await webhook(ev)).json()).recu, true);
+    assert.equal((await (await webhook(ev)).json()).deja, true);
+    assert.ok(await lire('evenementsStripe/evt_double_1'));
+  });
+  test('remboursement par l’équipe : partiel puis total, part du pêcheur et cumul DAC7 corrigés', async () => {
+    const q = await db.collection('bons').where('etalId', '==', etalId).where('statut', '==', 'retire').get();
+    const d = q.docs.find((x) => !x.data().facture && x.data().montantPaye > 6);
+    const b = d.data(); const c = d.id;
+    const annee = new Date(Date.now() - 4 * 3600_000).toISOString().slice(0, 4);
+    const avant = (await lire('ventesVendeurs/' + etalId + '_' + annee)).montant;
+    await assert.rejects(appeler('pecheur', 'equipeRembourser', { code: c, montant: 1, motif: 'test' }), /Réservé à l’équipe/);
+    await assert.rejects(appeler('equipe', 'equipeRembourser', { code: c, montant: 1 }), /motif/);
+    await assert.rejects(appeler('equipe', 'equipeRembourser', { code: c, montant: b.montantPaye + 1, motif: 'trop' }), /Au plus/);
+    const r = await appeler('equipe', 'equipeRembourser', { code: c, montant: 5, motif: 'poisson abîmé' });
+    assert.equal(r.total, false);
+    let x = await lire('bons/' + c);
+    assert.equal(x.rembourse, 5); assert.equal(x.statut, 'retire');
+    assert.equal(Math.round(((await lire('ventesVendeurs/' + etalId + '_' + annee)).montant) * 100), Math.round((avant - 5) * 100));
+    const r2 = await appeler('equipe', 'equipeRembourser', { code: c, motif: 'client mécontent' });
+    assert.equal(r2.total, true);
+    x = await lire('bons/' + c);
+    assert.equal(x.statut, 'rembourse'); assert.equal(x.rembourse, b.montantPaye);
+    assert.equal((await verifierSuivi(c)).valide, true, 'suivi chaîné intact après remboursement');
+  });
+  test('litige bancaire : signalement à l’équipe', async () => {
+    const avant = (await db.collection('signalements').get()).size;
+    await webhook({ type: 'charge.dispute.created', data: { object: { id: 'dp_1', object: 'dispute', amount: 2000, status: 'needs_response', reason: 'fraudulent', payment_intent: 'pi_formats' } } });
+    const apres = (await db.collection('signalements').get()).docs.map((s) => s.data());
+    assert.equal(apres.length, avant + 1); assert.ok(apres.some((s) => /LITIGE BANCAIRE 20\.00/.test(s.motif)));
+  });
+  test('contrôle quotidien : rapprochement Stripe et contraintes de la base respectées', async () => {
+    const r = await appeler('equipe', 'equipeControler', {});
+    assert.deepEqual(r.integrite.erreurs, [], 'aucune contrainte violée');
+    assert.ok(r.integrite.bons > 5);
+    assert.ok(await lire('controles/' + r.jour));
+    // une contrainte violée est détectée : stock négatif
+    const e = await lire('etals/' + etalId);
+    await db.doc('etals/' + etalId).update({ produits: [{ ...e.produits[0], dispoKg: -1 }, ...e.produits.slice(1)] });
+    const r2 = await appeler('equipe', 'equipeControler', {});
+    assert.ok(r2.integrite.erreurs.some((m) => /stock négatif/.test(m)));
+    await db.doc('etals/' + etalId).update({ produits: e.produits });
+  });
+  test('export annuel DAC7 pour la déclaration des plateformes', async () => {
+    const annee = Number(new Date(Date.now() - 4 * 3600_000).toISOString().slice(0, 4));
+    const r = await appeler('equipe', 'equipeDac7', { annee });
+    assert.ok(r.vendeurs >= 1);
+    assert.match(r.csv.split('\n')[0], /nombre_ventes;montant_ttc/);
+    assert.ok(r.csv.includes(etalId));
+  });
+  test('adresse de santé pour la surveillance', async () => {
+    await lancerTaches();
+    const r = await fetch(FONCTIONS + 'sante');
+    assert.equal(r.status, 200); assert.equal((await r.json()).ok, true);
+  });
+  test('photo d’arrivage : position GPS et marque du téléphone effacées par le serveur', async () => {
+    const sharp = fn('sharp'); const { getStorage } = fn('firebase-admin/storage');
+    const avec = await sharp({ create: { width: 40, height: 30, channels: 3, background: 'blue' } }).jpeg()
+      .withExif({ IFD0: { Make: 'TelephoneTest' }, IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '14/1 36/1 0/1' } }).toBuffer();
+    const f = getStorage().bucket(PROJET + '.appspot.com').file('arrivages/' + etalId + '/gps.jpg');
+    await f.save(avec, { contentType: 'image/jpeg', resumable: false });
+    const ok = await attendre(async () => (await f.getMetadata())[0].metadata?.nettoye === '1', 30000);
+    assert.ok(ok, 'photo nettoyée');
+    const [propre] = await f.download();
+    assert.equal((await sharp(propre).metadata()).exif, undefined);
+    assert.ok(!propre.includes('TelephoneTest'));
   });
 });
 

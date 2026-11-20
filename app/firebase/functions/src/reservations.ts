@@ -7,6 +7,7 @@ import { emettreFacture } from './factures';
 import { notifier } from './notifier';
 import { CODE_BON, codeRetrait, creneaux, especeConnue, masquerNumeros, montantBloque, montantsPesee, nomPropre, normaliser, preuveValide, signerBon } from './regles';
 
+import { cumulerVente } from './paiements';
 import { appliquerPesee, prendre, rendre, rienRemis, type Demande, type LigneBon, type Produit } from './formats';
 export type { LigneBon };
 export const KG_MAX_PARTICULIER = 10, KG_MAX_PRO = 100;
@@ -50,16 +51,20 @@ export async function expirerSession(code: string) {
 }
 
 const SYSTEME: Auteur = { uid: null, role: 'systeme' };
-// Remet le poisson en vente et annule un bon non payé (ou payé mais jamais retiré)
-export async function annulerBon(code: string, raison = 'paiement non effectué', par: Auteur = SYSTEME) {
-  await db.runTransaction(async (t) => {
+// Remet le poisson en vente et annule un bon non payé (ou payé mais jamais retiré).
+// RÈGLE : on écrit toujours l'état dans la base AVANT d'appeler Stripe (annulation, encaissement) ;
+// le message que Stripe renvoie ensuite trouve le bon déjà clôturé et ne fait rien.
+export async function annulerBon(code: string, raison = 'paiement non effectué', par: Auteur = SYSTEME,
+  opts: { depuis?: string[]; extra?: Record<string, unknown>; details?: Record<string, unknown> } = {}) {
+  return db.runTransaction(async (t) => {
     const ref = db.doc('bons/' + code); const b = (await t.get(ref)).data();
-    if (!b || !['en_attente_paiement', 'reserve', 'en_livraison'].includes(b.statut)) return;
+    if (!b || !(opts.depuis ?? ['en_attente_paiement', 'reserve', 'en_livraison']).includes(b.statut)) return false;
     const etalRef = db.doc('etals/' + b.etalId); const etal = (await t.get(etalRef)).data();
     if (etal && b.origine !== 'demande') {
       t.update(etalRef, { produits: rendre(etal.produits as Produit[], b.lignes as LigneBon[]) });
     }
-    t.update(ref, { statut: 'annule', ...ajouterEtape(t, code, b, 'annulee', par, { raison }) });
+    t.update(ref, { statut: 'annule', ...(opts.extra ?? {}), ...ajouterEtape(t, code, b, 'annulee', par, { raison, ...(opts.details ?? {}) }) });
+    return true;
   });
 }
 
@@ -198,12 +203,14 @@ export const validerPesee = onCall({ ...APPEL, consumeAppCheckToken: APPCHECK, s
 
   const pecheur: Auteur = { uid, role: 'pecheur' };
   if (rienRemis(pesees)) {
-    await stripe().paymentIntents.cancel(paiement);
+    // l'état d'abord, puis Stripe (voir annulerBon)
     await db.runTransaction(async (t) => {
       const x = (await t.get(ref)).data();
+      if (!x || !['reserve', 'en_livraison'].includes(x.statut)) throw erreur('failed-precondition', 'Ce bon est déjà clôturé.');
       t.update(ref, { statut: 'annule', lignes: pesees, montantPaye: 0, retireLe: FieldValue.serverTimestamp(),
         ...ajouterEtape(t, code, x, 'annulee', pecheur, { raison: 'pesée à 0 kg (rupture ou client absent)', debite: 0 }) });
     });
+    await stripe().paymentIntents.cancel(paiement, {}, { idempotencyKey: 'annul-' + code }).catch(() => null); // sinon refait par le rapprochement
     await db.doc('bonsSecrets/' + code).update({ nonce: FieldValue.delete() });
     await conv.set(fermer, { merge: true });
     await notifier([b.clientId], 'Réservation ' + code + ' annulée', 'Rien ne vous a été débité.');
@@ -220,15 +227,16 @@ export const validerPesee = onCall({ ...APPEL, consumeAppCheckToken: APPCHECK, s
     t.update(ref, { statut: 'pesee_en_cours' });
   });
   try {
-    await stripe().paymentIntents.capture(paiement, { amount_to_capture: centimes(m.total), application_fee_amount: centimes(m.plateforme) });
+    // clé d'idempotence : si la réponse se perd et qu'on réessaie, Stripe n'encaisse pas deux fois
+    await stripe().paymentIntents.capture(paiement, { amount_to_capture: centimes(m.total), application_fee_amount: centimes(m.plateforme) }, { idempotencyKey: 'pesee-' + code + '-' + centimes(m.total) });
   } catch (e) {
-    await ref.update({ statut: b.statut });
+    await ref.update({ statut: b.statut }); // encaissement refusé : le bon redevient « à peser » (contrôlé par le rapprochement)
     throw e;
   }
   await db.runTransaction(async (t) => {
     const x = (await t.get(ref)).data();
     t.update(ref, { statut: 'retire', lignes: pesees, montantPaye: m.total, commission: m.plateforme, retireLe: FieldValue.serverTimestamp(),
-      ...ajouterEtape(t, code, x, 'retiree', pecheur, { poids: pesees.map((l) => (l.format === 'lot' ? { espece: l.espece, lots: l.nombre ?? 0 } : { espece: l.espece, kg: l.kg })), debite: m.total, preuve: String(d.preuve ?? '').length === 6 ? 'code de retrait' : 'QR' }) });
+      ...ajouterEtape(t, code, x, 'retiree', pecheur, { poids: pesees.map((l) => (l.format === 'lot' ? { espece: l.espece, lots: l.nombre ?? 0 } : { espece: l.espece, kg: l.kg })), debite: m.total, preuve: String(d.preuve ?? '').length === 6 ? 'code de retrait' : 'QR' }) });    cumulerVente(t, b.etalId, m.total, m.plateforme); // cumul annuel du vendeur (déclaration DAC7)
   });
   if (b.pro) await emettreFacture(code).catch(() => null); // sinon refaite par les tâches automatiques
   await db.doc('bonsSecrets/' + code).update({ nonce: FieldValue.delete() }); // l'ancien QR ne vaut plus rien

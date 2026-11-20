@@ -195,21 +195,22 @@ export async function chargerEtals(avecAdresse: string[] = []): Promise<Etal[]> 
   return [...etals].map(([id, e]) => versEtal(id, e, prives.get(id)));
 }
 
-type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null; facture?: string | null; avis?: number | null; origine?: Bon['origine'] };
+type DocBon = { code: string; etalId: string; clientId: string | null; clientPrenom: string; pro: InfosPro | null; livraison: { adresse: string; frais: number } | null; lignes: (Omit<LignePanier, 'produitId'> & { produitId: string | null })[]; creneau: string; statut: string; montantBloque: number; montantPaye: number | null; creeLe: Timestamp | null; facture?: string | null; avis?: number | null; origine?: Bon['origine']; rembourse?: number };
 export async function chargerBons(moi: string): Promise<Bon[]> {
   const c = await droits();
   const qs = [query(collection(db(), 'bons'), where('clientId', '==', moi))];
   if (c?.role === 'pecheur') qs.push(query(collection(db(), 'bons'), where('pecheurId', '==', moi)));
   const docs = (await Promise.all(qs.map((q) => essai(() => getDocs(q))))).flatMap((r) => r.docs.map((d) => d.data() as DocBon));
   const vus = new Set<string>();
-  return docs.filter((b) => b.statut !== 'annule' && !vus.has(b.code) && !!vus.add(b.code))
+  // annulés : montrés seulement s'il y a eu un débit (client absent), pour que le client le voie
+  return docs.filter((b) => (b.statut !== 'annule' || Number(b.montantPaye ?? 0) > 0) && !vus.has(b.code) && !!vus.add(b.code))
     .sort((a, b) => (a.creeLe?.toMillis() ?? 0) - (b.creeLe?.toMillis() ?? 0))
     .map((b) => ({
       code: b.code, etalId: b.etalId, client: b.clientId === moi ? 'Vous' : b.clientPrenom, pro: b.pro ?? undefined, livraison: b.livraison ?? undefined,
       lignes: b.lignes.map((l) => ({ ...l, produitId: l.produitId ?? 'commande' })), creneau: b.creneau, montantBloque: Number(b.montantBloque),
       montantPaye: b.montantPaye == null ? undefined : Number(b.montantPaye),
-      statut: b.statut === 'retire' ? 'retire' : b.statut === 'en_attente_paiement' ? 'a_payer' : 'reserve',
-      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(), facture: b.facture ?? undefined, avis: b.avis ?? undefined, origine: b.origine,
+      statut: b.statut === 'retire' || b.statut === 'rembourse' ? 'retire' : b.statut === 'annule' ? 'annule' : b.statut === 'en_attente_paiement' ? 'a_payer' : 'reserve',
+      creeLe: minutesMartinique(b.creeLe), date: b.creeLe?.toDate().toISOString(), facture: b.facture ?? undefined, avis: b.avis ?? undefined, origine: b.origine, rembourse: b.rembourse || undefined,
     }));
 }
 
@@ -401,7 +402,13 @@ export type SignalementEquipe = { id: string; conv: string; bonCode: string | nu
 export type FactureEquipe = { numero: string; bon: string; emiseLe: string; acheteur: string; vendeur: string; totalTtc: number };
 export const equipeAcces = async () => (await fonction<{ equipe: boolean }>('equipeAcces', {})).equipe;
 export type AvisEquipe = { code: string; etalId: string; prenom: string; note: number; commentaire: string; le: string | null };
-export const equipeTableau = () => fonction<{ dossiers: Dossier[]; signalements: SignalementEquipe[]; factures: FactureEquipe[]; avis: AvisEquipe[] }>('equipeTableau', {});
+export type Ecart = { code: string; paiement: string; stripe: string; base: string; probleme: string; corrige?: boolean };
+export type ControleEquipe = { jour: string; ok: boolean; anomalies: number; verifies: number; ecarts: Ecart[]; erreurs: string[] };
+export type AvoirEquipe = { id: string; facture: string; bon: string; montant: number; motif: string };
+export const equipeTableau = () => fonction<{ dossiers: Dossier[]; signalements: SignalementEquipe[]; factures: FactureEquipe[]; avis: AvisEquipe[]; controle: ControleEquipe | null; avoirs: AvoirEquipe[] }>('equipeTableau', {});
+export const equipeControler = () => fonction<{ jour: string; ok: boolean; anomalies: number; rapprochement: { verifies: number; ecarts: Ecart[] }; integrite: { erreurs: string[] } }>('equipeControler', {});
+export const equipeRembourser = (code: string, motif: string, montant?: number) => fonction<{ montant: number; total: boolean }>('equipeRembourser', { code, motif, ...(montant ? { montant } : {}) });
+export const equipeDac7 = (annee: number) => fonction<{ nom: string; csv: string; vendeurs: number }>('equipeDac7', { annee });
 export const equipeRetirerAvis = (code: string) => fonction<{ ok: boolean }>('equipeRetirerAvis', { code });
 export const equipeDossier = (etalId: string, decision: 'verifier' | 'refuser' | 'suspendre', motif = '') => fonction<{ statut: string }>('equipeDossier', { etalId, decision, motif });
 export const equipeSignalement = (id: string, decision: 'classer' | 'suspendre') => fonction<{ ok: boolean }>('equipeSignalement', { id, decision });

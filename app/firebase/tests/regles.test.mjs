@@ -151,7 +151,12 @@ describe('Fichiers', () => {
   test('le pêcheur dépose la photo de sa pêche', () => assertSucceeds(uploadBytes(ref(quiS(...PECHEUR), 'arrivages/' + ETAL + '/1.jpg'), image, { contentType: 'image/jpeg' })));
   test('pas dans le dossier d’un autre étal', () => assertFails(uploadBytes(ref(quiS(...PECHEUR), 'arrivages/' + ETAL2 + '/1.jpg'), image, { contentType: 'image/jpeg' })));
   test('pas autre chose qu’une image', () => assertFails(uploadBytes(ref(quiS(...PECHEUR), 'arrivages/' + ETAL + '/x.html'), image, { contentType: 'text/html' })));
-  test('photos lisibles par tous', () => assertSucceeds(getBytes(ref(env.unauthenticatedContext().storage(), 'arrivages/' + ETAL + '/1.jpg'))));
+  test('photo originale illisible tant que le serveur ne l’a pas nettoyée (position GPS)', () => assertFails(getBytes(ref(env.unauthenticatedContext().storage(), 'arrivages/' + ETAL + '/1.jpg'))));
+  test('le pêcheur ne peut pas déclarer sa photo « nettoyée »', () => assertFails(uploadBytes(ref(quiS(...PECHEUR), 'arrivages/' + ETAL + '/2.jpg'), image, { contentType: 'image/jpeg', customMetadata: { nettoye: '1' } })));
+  test('photo nettoyée lisible par tous', async () => {
+    await env.withSecurityRulesDisabled((c) => uploadBytes(ref(c.storage(), 'arrivages/' + ETAL + '/3.jpg'), image, { contentType: 'image/jpeg', customMetadata: { nettoye: '1' } }));
+    await assertSucceeds(getBytes(ref(env.unauthenticatedContext().storage(), 'arrivages/' + ETAL + '/3.jpg')));
+  });
   test('le client dépose un message vocal dans sa conversation', () => assertSucceeds(uploadBytes(ref(quiS(...CLIENT_B), 'messages-audio/' + CONV + '/1.m4a'), son, { contentType: 'audio/mp4' })));
   test('le pêcheur de la conversation l’écoute', () => assertSucceeds(getBytes(ref(quiS(...PECHEUR), 'messages-audio/' + CONV + '/1.m4a'))));
   test('un autre client ne peut pas l’écouter', () => assertFails(getBytes(ref(quiS(...CLIENT_C), 'messages-audio/' + CONV + '/1.m4a'))));

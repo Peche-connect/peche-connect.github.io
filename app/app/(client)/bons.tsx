@@ -37,7 +37,7 @@ export default function MesBons() {
               </View>
               <T>Étal de {e?.pecheur ?? '—'} · {e?.port ?? ''}</T>
               <T gris petit>{app.resume(b.lignes)}</T>
-              <Pastille texte={b.statut === 'retire' ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) : b.statut === 'a_payer' ? 'À régler pour confirmer' : 'À retirer · en attente de pesée'} style={{ backgroundColor: b.statut === 'retire' ? '#dff3ea' : b.statut === 'a_payer' ? '#fde7dc' : c.doux }} />
+              <Pastille texte={b.statut === 'annule' ? 'Annulé · ' + (b.montantPaye ? euro(b.montantPaye) + ' débités (absence)' : 'rien débité') : b.statut === 'retire' ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) + (b.rembourse ? ' · remboursé ' + euro(b.rembourse) : '') : b.statut === 'a_payer' ? 'À régler pour confirmer' : 'À retirer · en attente de pesée'} style={{ backgroundColor: b.statut === 'retire' ? '#dff3ea' : b.statut === 'a_payer' ? '#fde7dc' : c.doux }} />
             </Pressable>
           );
         })}

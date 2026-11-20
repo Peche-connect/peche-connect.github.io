@@ -5,8 +5,8 @@
 import { createHash } from 'node:crypto';
 import { db, Timestamp } from './commun';
 
-export type Etape = 'reservee' | 'commande_creee' | 'payee' | 'paiement_refuse' | 'retiree' | 'annulee' | 'facture_emise';
-export type Auteur = { uid: string | null; role: 'client' | 'pro' | 'pecheur' | 'systeme' | 'stripe' };
+export type Etape = 'reservee' | 'commande_creee' | 'payee' | 'paiement_refuse' | 'retiree' | 'annulee' | 'facture_emise' | 'remboursee' | 'litige' | 'avoir_emis';
+export type Auteur = { uid: string | null; role: 'client' | 'pro' | 'pecheur' | 'systeme' | 'stripe' | 'equipe' };
 type Suivi = { n: number; empreinte: string };
 
 const empreinte = (prec: string, code: string, n: number, etape: string, quand: number, par: Auteur, details: Record<string, unknown>) =>
