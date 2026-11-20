@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Redirect, router } from 'expo-router';
+import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +19,9 @@ const urlActuelle = () => (Platform.OS === 'web' && typeof window !== 'undefined
 // gratuits et sans SMS ; à la première connexion, choix du rôle et du prénom.
 export default function Connexion() {
   const app = useApp();
+  // retour : écran où revenir après la connexion (ex. le panier quand on veut réserver)
+  const { retour } = useLocalSearchParams<{ retour?: string }>();
+  const [retourMemo, setRetourMemo] = useState<string | undefined>();
   const [role, setRole] = useState<Choix>('client');
   const [prenom, setPrenom] = useState('');
   const [tel, setTel] = useState('');
@@ -33,13 +36,13 @@ export default function Connexion() {
 
   // retour de Google ou du lien e-mail : on retrouve le rôle et le prénom choisis avant de partir
   useEffect(() => {
-    AsyncStorage.getItem(EN_ATTENTE).then((v) => { if (v) { try { const x = JSON.parse(v); setRole(x.role); setPrenom(x.prenom ?? ''); } catch { /* ignoré */ } } });
+    AsyncStorage.getItem(EN_ATTENTE).then((v) => { if (v) { try { const x = JSON.parse(v); setRole(x.role); setPrenom(x.prenom ?? ''); if (x.retour) setRetourMemo(x.retour); } catch { /* ignoré */ } } });
     if (!MODE_DEMO && B.estLienEmail(urlActuelle())) terminerLien();
   }, []);
 
   if (!MODE_DEMO && app.e.session) return <Redirect href="/" />;
 
-  const memoriser = () => AsyncStorage.setItem(EN_ATTENTE, JSON.stringify({ role, prenom }));
+  const memoriser = () => AsyncStorage.setItem(EN_ATTENTE, JSON.stringify({ role, prenom, retour }));
   // Après connexion : enregistre le profil puis ouvre le bon espace
   const continuer = async (r: Choix = role, p: string = prenom) => {
     setOccupe(true); setErreur('');
@@ -48,7 +51,9 @@ export default function Connexion() {
     if (r === 'pro') { router.replace({ pathname: '/inscription-pro', params: { tel: chiffres } }); return; }
     await app.connecter(chiffres, 'client', p.trim() || 'Client');
     setOccupe(false);
-    router.replace('/(client)');
+    // on revient là où on était (panier, mes bons…) ; sinon on va aux étals
+    const r2 = retour ?? retourMemo;
+    if (r2 && router.canGoBack()) router.back(); else router.replace((r2 as any) || '/(client)');
   };
   // Connecté : profil existant → accueil ; première fois → enregistrer le rôle choisi
   const apresConnexion = async () => {
@@ -148,8 +153,8 @@ export default function Connexion() {
           <>
             <Image source={require('../assets/ambiance/yoles.jpg')} style={{ width: '100%', height: 170, borderRadius: 16 }} resizeMode="cover" accessibilityLabel="Yoles de pêcheurs sur la plage" />
             <View style={{ gap: 6 }}>
-              <T tresGras style={{ fontSize: 24 }}>Bienvenue</T>
-              <T gris>Le poisson du jour des pêcheurs de Martinique, réservé en quelques secondes.</T>
+              <T tresGras style={{ fontSize: 24 }}>{retour ? 'Créez votre compte pour réserver' : 'Bienvenue'}</T>
+              <T gris>{retour ? 'Quelques secondes suffisent. Votre panier vous attend.' : 'Le poisson du jour des pêcheurs de Martinique, réservé en quelques secondes.'}</T>
             </View>
             {choixRole}
             {MODE_DEMO ? (
@@ -180,6 +185,11 @@ export default function Connexion() {
               </>
             )}
             {message}
+            {role === 'client' ? (
+              <Pressable accessibilityRole="button" onPress={() => (router.canGoBack() ? router.back() : router.replace('/(client)'))} style={{ alignSelf: 'center', padding: 8 }}>
+                <T tresGras style={{ color: c.marine }}>{retour ? 'Revenir sans me connecter' : 'Voir les étals sans compte'}</T>
+              </Pressable>
+            ) : null}
             <T gris petit style={{ textAlign: 'center' }}>En continuant, vous acceptez les conditions générales et la politique de confidentialité.</T>
             <LiensLegaux centre />
           </>

@@ -8,13 +8,14 @@ import { couleurs as c } from '../../src/theme';
 
 export default function MesBons() {
   const app = useApp();
-  const bons = app.mesBons();
-  const pre = app.mesPrecommandes().filter((p) => p.statut !== 'annulee').reverse();
+  const bons = app.e.session ? app.mesBons() : [];
+  const pre = (app.e.session ? app.mesPrecommandes() : []).filter((p) => p.statut !== 'annulee').reverse();
   const etat = (p: typeof pre[number]) => p.statut === 'en_attente' ? 'En attente du retour du pêcheur' : p.statut === 'convertie' ? 'Arrivé : ' + kg(p.kgServi ?? p.kg) + ' mis de côté, à payer' : 'Pas servi' + (p.raison ? ' (' + p.raison + ')' : '') + ' : rien débité';
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.fond }}>
       <T tresGras style={{ fontSize: 24, padding: 16 }}>Mes bons</T>
       <ScrollView>
+        {!app.e.session ? <Vide titre="Vos bons de retrait" texte="Connectez-vous pour réserver et retrouver ici vos bons avec leur code." action="Se connecter" onAction={() => router.push({ pathname: '/connexion', params: { retour: '/(client)/bons' } })} /> : null}
         {pre.length ? (
           <View style={{ padding: 16, gap: 8, borderBottomWidth: 1, borderBottomColor: c.ligne }}>
             <T tresGras style={{ fontSize: 17 }}>Réservé avant la sortie</T>
@@ -26,7 +27,7 @@ export default function MesBons() {
             ))}
           </View>
         ) : null}
-        {!bons.length && !pre.length ? <Vide titre="Aucun bon pour l’instant" texte="Quand vous réservez, votre bon de retrait apparaît ici avec son code." action="Voir les étals" onAction={() => router.navigate('/(client)')} /> : null}
+        {app.e.session && !bons.length && !pre.length ? <Vide titre="Aucun bon pour l’instant" texte="Quand vous réservez, votre bon de retrait apparaît ici avec son code." action="Voir les étals" onAction={() => router.navigate('/(client)')} /> : null}
         {bons.map((b) => {
           const e = app.etal(b.etalId);
           return (

@@ -108,7 +108,11 @@ export default function PanierEcran() {
         </View>
       </ScrollView>
       <View style={{ padding: 16, borderTopWidth: 1, borderTopColor: c.ligne }}>
-        <Bouton titre={envoi ? 'Paiement en cours…' : 'Réserver et payer'} desactive={envoi} onPress={() => { app.choisirCreneau(creneau); reserver(); }} />
+        {app.e.session ? (
+          <Bouton titre={envoi ? 'Paiement en cours…' : 'Réserver et payer'} desactive={envoi} onPress={() => { app.choisirCreneau(creneau); reserver(); }} />
+        ) : (
+          <Bouton titre="Se connecter pour réserver" onPress={() => { app.choisirCreneau(creneau); router.push({ pathname: '/connexion', params: { retour: '/panier' } }); }} />
+        )}
       </View>
       <Feuille visible={paiement} onFermer={() => setPaiement(false)} titre="Moyen de paiement">
         <T gris style={{ marginBottom: 10 }}>{MODE_DEMO ? 'En mode démo, aucun paiement réel n’est fait.' : 'Le paiement est sécurisé par Stripe.'}</T>

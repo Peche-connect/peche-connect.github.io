@@ -37,7 +37,8 @@ export default function Accueil() {
               <T tresGras style={{ fontSize: 17 }}>{app.e.commune} ▾</T>
             </Pressable>
           </View>
-          <Rond label="Mon compte" onPress={() => router.push('/compte')}><IcCompte /></Rond>
+          {app.e.session ? <Rond label="Mon compte" onPress={() => router.push('/compte')}><IcCompte /></Rond>
+            : <Pressable accessibilityRole="button" onPress={() => router.push('/connexion')} style={{ backgroundColor: c.doux, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9 }}><T tresGras style={{ fontSize: 13 }}>Se connecter</T></Pressable>}
         </View>
         <View style={st.recherche}>
           <IcLoupe couleur={c.gris} taille={18} />
