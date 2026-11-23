@@ -96,11 +96,11 @@ export const ETALS_DEMO: Etal[] = [
 const ilYa = (j: number) => new Date(Date.now() - j * 86400_000).toISOString();
 export const AVIS_DEMO: Record<string, Avis[]> = {
   jm: [
-    { code: 'R-8', prenom: 'Sophie', note: 5, commentaire: 'Thon superbe, découpé en tranches devant moi.', le: ilYa(1) },
-    { code: 'R-5', prenom: 'Marc', note: 5, commentaire: 'Dorade entière très fraîche, Jean-Marc l’a vidée sur place.', le: ilYa(3) },
-    { code: 'R-3', prenom: 'Le Comptoir du Port', note: 4, commentaire: 'Bon poisson, un peu d’attente au retrait.', le: ilYa(6) },
+    { code: 'R-8', prenom: 'Sophie', note: 5, commentaire: 'Thon superbe, découpé en tranches devant moi.', le: ilYa(1), achatLe: ilYa(2) },
+    { code: 'R-5', prenom: 'Marc', note: 5, commentaire: 'Dorade entière très fraîche, Jean-Marc l’a vidée sur place.', le: ilYa(3), achatLe: ilYa(4) },
+    { code: 'R-3', prenom: 'Le Comptoir du Port', note: 4, commentaire: 'Bon poisson, un peu d’attente au retrait.', le: ilYa(6), achatLe: ilYa(7) },
   ],
-  jo: [{ code: 'R-4', prenom: 'Claire', note: 5, commentaire: 'Lambi propre et bien nettoyé.', le: ilYa(2) }],
+  jo: [{ code: 'R-4', prenom: 'Claire', note: 5, commentaire: 'Lambi propre et bien nettoyé.', le: ilYa(2), achatLe: ilYa(3) }],
 };
 
 // Sorties annoncées (démo) : retour demain matin

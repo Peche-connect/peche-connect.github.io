@@ -52,7 +52,8 @@ export default function Connexion() {
     await app.connecter(chiffres, 'client', p.trim() || 'Client');
     setOccupe(false);
     // on revient là où on était (panier, mes bons…) ; sinon on va aux étals
-    const r2 = retour ?? retourMemo;
+    const brut = retour ?? retourMemo;
+    const r2 = brut && /^\/[A-Za-z0-9/_\-()?=&.]*$/.test(brut) && !brut.startsWith('//') ? brut : undefined; // seulement un écran de l'appli
     if (r2 && router.canGoBack()) router.back(); else router.replace((r2 as any) || '/(client)');
   };
   // Connecté : profil existant → accueil ; première fois → enregistrer le rôle choisi

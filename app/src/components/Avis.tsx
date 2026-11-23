@@ -44,10 +44,12 @@ export function ListeAvis({ etalId, nombre }: { etalId: string; nombre: number }
       <T tresGras style={{ fontSize: 17 }}>Avis des clients</T>
       {liste.length ? liste.map((a) => (
         <View key={a.code} style={{ gap: 2 }}>
-          <T><T tresGras>{a.prenom}</T> · <T style={{ color: c.marine }}>{etoiles(a.note)}</T> · <T gris petit>{date(a.le)}</T></T>
+          <T><T tresGras>{a.prenom}</T> · <T style={{ color: c.marine }}>{etoiles(a.note)}</T></T>
+          <T gris petit>Achat vérifié{a.achatLe ? ' du ' + date(a.achatLe) : ''} · avis publié le {date(a.le)}</T>
           {a.commentaire ? <T gris>{a.commentaire}</T> : null}
         </View>
-      )) : <T gris>Pas encore d’avis. Les avis viennent uniquement de clients qui ont retiré leur poisson.</T>}
+      )) : <T gris>Pas encore d’avis.</T>}
+      <T gris petit>Seuls les clients qui ont retiré et payé leur poisson peuvent donner un avis, une fois par achat. Avis non modérés avant publication ; retirés seulement s’ils sont injurieux ou hors sujet.</T>
     </View>
   );
 }

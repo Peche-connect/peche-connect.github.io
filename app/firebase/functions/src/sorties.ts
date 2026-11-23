@@ -57,8 +57,11 @@ export const annoncerSortie = onCall(APPEL, async (req) => {
   });
   if (nouvelle) {
     // alerte aux clients qui suivent une de ces espèces
-    const suiveurs = await db.collection('profils').where('suivis', 'array-contains-any', especes.map((x) => x.espece)).get();
-    await notifier(suiveurs.docs.map((p) => p.id).filter((id) => id !== uid), (e.prenom ?? 'Un pêcheur') + ' part en mer',
+    const [suiveurs, fideles] = await Promise.all([
+      db.collection('profils').where('suivis', 'array-contains-any', especes.map((x) => x.espece)).get(),
+      db.collection('profils').where('favoris', 'array-contains', uid).get(), // clients qui l'ont en favori
+    ]);
+    await notifier([...new Set([...suiveurs.docs, ...fideles.docs].map((p) => p.id))].filter((id) => id !== uid), (e.prenom ?? 'Un pêcheur') + ' part en mer',
       'Retour prévu ' + heureMq(retour) + ' : ' + especes.map((x) => x.espece.toLowerCase()).join(', ') + '. Réservez avant son retour.', { lien: '/sortie/' + uid });
   }
   return { ok: true };

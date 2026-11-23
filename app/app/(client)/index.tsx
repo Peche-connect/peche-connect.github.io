@@ -25,6 +25,7 @@ export default function Accueil() {
     return e.produits.length > 0;
   }).sort((a, b) => app.km(a) - app.km(b)), [app, filtre, q]);
   const recents = liste.filter(app.frais);
+  const favoris = app.e.etals.filter((x) => app.e.favoris.includes(x.id));
 
   return (
     <SafeAreaView edges={['top']} style={{ flex: 1, backgroundColor: c.fond }}>
@@ -62,6 +63,14 @@ export default function Accueil() {
           <Vide titre="Aucun étal ne correspond" texte="Essayez un autre poisson ou effacez la recherche." action="Tout afficher" onAction={() => { setFiltre('Tout'); setQ(''); }} />
         ) : (
           <>
+            {filtre === 'Tout' && !q && favoris.length ? (
+              <View style={{ gap: 10 }}>
+                <T tresGras style={st.h2}>Mes pêcheurs</T>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 12, paddingHorizontal: 16 }}>
+                  {favoris.map((e) => <CarteEtal key={e.id} etal={e} />)}
+                </ScrollView>
+              </View>
+            ) : null}
             {filtre === 'Tout' && !q ? <SortiesAnnoncees titre={st.h2} /> : null}
             {recents.length > 0 && filtre !== 'Moins d’1 h' ? (
               <View style={{ gap: 10 }}>

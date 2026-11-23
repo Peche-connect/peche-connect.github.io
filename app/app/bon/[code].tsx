@@ -12,6 +12,7 @@ import { detailTva, euro, kg, TVA_PRODUITS_MER } from '../../src/format';
 import { cleLigne, libelleLigne, preparationLigne, quantiteLigne } from '../../src/formats';
 import { NoterAchat } from '../../src/components/Avis';
 import { texteRegles } from '../../src/annulation';
+import { mentionsObligatoires } from '../../src/data/especes';
 import { MODE_DEMO, useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -80,7 +81,7 @@ export default function BonEcran() {
           {!retire && qr.pin ? <T gris>Si le QR ne passe pas, dites au pêcheur votre code de retrait : <T tresGras style={{ color: c.texte, letterSpacing: 2 }}>{qr.pin.slice(0, 3) + ' ' + qr.pin.slice(3)}</T>. Ne le donnez qu’au moment de la pesée.</T> : null}
           <Pastille texte={retire ? 'Retiré · payé ' + euro(b.montantPaye ?? 0) : 'À retirer · en attente de pesée'} style={retire ? { backgroundColor: '#dff3ea' } : { backgroundColor: c.doux }} />
           <Ligne />
-          {b.lignes.map((l) => <View key={cleLigne(l)} style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}><T style={{ flex: 1 }}>{libelleLigne(l)}{preparationLigne(l) ? ', ' + preparationLigne(l) : ''}</T><T tresGras>{quantiteLigne(l, retire)}</T></View>)}
+          {b.lignes.map((l) => <View key={cleLigne(l)} style={{ gap: 2 }}><View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 10 }}><T style={{ flex: 1 }}>{libelleLigne(l)}{preparationLigne(l) ? ', ' + preparationLigne(l) : ''}</T><T tresGras>{quantiteLigne(l, retire)}</T></View><T gris style={{ fontSize: 12 }}>{mentionsObligatoires(l.espece, l.engin)}</T></View>)}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>{retire ? 'Payé (poids réel)' : 'Montant bloqué'}</T><T tresGras>{retire ? euro(b.montantPaye ?? 0) : euro(b.montantBloque) + ' max'}</T></View>
           {b.rembourse ? <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}><T gris>Remboursé</T><T tresGras style={{ color: c.vert }}>{euro(b.rembourse)}</T></View> : null}
         </View>

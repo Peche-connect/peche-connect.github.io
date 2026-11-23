@@ -72,6 +72,9 @@ describe('Client sans bon', () => {
   test('ne lit pas le profil d’un autre', () => assertFails(getDoc(doc(qui(...CLIENT_C), 'profils/clientB'))));
   test('lit son propre profil', () => assertSucceeds(getDoc(doc(qui(...CLIENT_C), 'profils/clientC'))));
   test('change son prénom et ses alertes', () => assertSucceeds(updateDoc(doc(qui(...CLIENT_C), 'profils/clientC'), { prenom: 'Marco', suivis: ['Thazard'] })));
+  test('suit un pêcheur favori', () => assertSucceeds(updateDoc(doc(qui(...CLIENT_C), 'profils/clientC'), { favoris: [ETAL] })));
+  test('pas plus de 50 pêcheurs favoris', () => assertFails(updateDoc(doc(qui(...CLIENT_C), 'profils/clientC'), { favoris: Array.from({ length: 51 }, (_, i) => 'e' + i) })));
+  test('ne peut pas changer son rôle', () => assertFails(updateDoc(doc(qui(...CLIENT_C), 'profils/clientC'), { role: 'pecheur' })));
   test('pas de numéro caché dans le prénom', () => assertFails(updateDoc(doc(qui(...CLIENT_C), 'profils/clientC'), { prenom: 'Marc 0696123456' })));
   test('pas de numéro caché dans la commune', () => assertFails(updateDoc(doc(qui(...CLIENT_C), 'profils/clientC'), { commune: 'Appelez 0696' })));
   test('ne touche pas à ses jetons de notification directement', () => assertFails(updateDoc(doc(qui(...CLIENT_C), 'profils/clientC'), { jetons: ['x'] })));

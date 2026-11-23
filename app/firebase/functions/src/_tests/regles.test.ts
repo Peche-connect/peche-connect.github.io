@@ -118,3 +118,24 @@ test('formats : pesée (lots au nombre remis, jamais plus)', () => {
   assert.throws(() => appliquerPesee(l, [3]), /Plus de lots/);
   assert.equal(rienRemis(appliquerPesee(l, [0])), true);
 });
+
+// ───────── Informations obligatoires sur le poisson ─────────
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { ENGINS, INFOS_ESPECES, mentionsObligatoires } from '../especes';
+import { ESPECES } from '../regles';
+test('informations obligatoires : même fichier dans l’appli et sur le serveur, toutes les espèces couvertes', () => {
+  const serveur = readFileSync(join(__dirname, '..', '..', 'src', 'especes.ts'), 'utf8');
+  const appli = readFileSync(join(__dirname, '..', '..', '..', '..', 'src', 'data', 'especes.ts'), 'utf8');
+  assert.equal(serveur, appli, 'app/src/data/especes.ts et functions/src/especes.ts doivent être identiques');
+  for (const e of ESPECES) { assert.ok(INFOS_ESPECES[e], 'infos manquantes : ' + e); assert.ok(ENGINS.includes(INFOS_ESPECES[e].engin)); }
+  assert.equal(mentionsObligatoires('Thon jaune'), 'Albacore (thon jaune) · Thunnus albacares · pêché en Atlantique Centre-Ouest (zone FAO 31) · lignes et hameçons');
+  assert.match(mentionsObligatoires('Langouste', 'Casiers et pièges'), /Panulirus argus.*casiers et pièges/);
+});
+test('engin de pêche : défaut selon l’espèce, liste fermée', () => {
+  assert.equal(produitValide({ format: 'kilo', prixKg: 14, dispoKg: 5 }, 'Thon jaune')!.engin, 'Lignes et hameçons');
+  assert.equal(produitValide({ format: 'kilo', prixKg: 14, dispoKg: 5, engin: 'Casiers et pièges' }, 'Chatrou')!.engin, 'Casiers et pièges');
+  assert.throws(() => produitValide({ format: 'kilo', prixKg: 14, dispoKg: 5, engin: 'dynamite' }, 'Thon jaune'), /Engin de pêche inconnu/);
+  const p = produitValide({ format: 'kilo', prixKg: 14, dispoKg: 5, engin: 'Sennes' }, 'Coulirou')!;
+  assert.equal(prendre({ ...p, id: 'x' }, { kg: 1 }).engin, 'Sennes');
+});

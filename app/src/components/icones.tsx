@@ -8,6 +8,7 @@ export const IcCarte = (p: P) => <Svg {...base(p)}><Path d="M12 21s-7-6.5-7-12a7
 export const IcBons = (p: P) => <Svg {...base(p)}><Path d="M4 4h16v16l-4-2-4 2-4-2-4 2z" /><Path d="M8 9h8M8 13h5" /></Svg>;
 export const IcMessages = (p: P) => <Svg {...base(p)}><Path d="M4 5h16v11H9l-5 4z" /></Svg>;
 export const IcArrivage = (p: P) => <Svg {...base(p)}><Path d="M4 7h16M4 12h16M4 17h10" /></Svg>;
+export const IcVentes = (p: P) => <Svg {...base(p)}><Path d="M4 20V10M10 20V4M16 20v-7M22 20H2" /></Svg>;
 export const IcCompte = (p: P) => <Svg {...base(p)}><Circle cx={12} cy={8} r={4} /><Path d="M4 21a8 8 0 0 1 16 0" /></Svg>;
 export const IcLoupe = (p: P) => <Svg {...base(p)}><Circle cx={11} cy={11} r={7} /><Path d="M20 20l-3.5-3.5" /></Svg>;
 export const IcVerrou = (p: P) => <Svg {...base(p)}><Rect x={5} y={11} width={14} height={9} rx={2} /><Path d="M8 11V8a4 4 0 0 1 8 0v3" /></Svg>;

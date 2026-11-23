@@ -21,6 +21,7 @@ export type Produit = {
   teteAuChoix?: boolean; // à la pièce : le client choisit avec ou sans tête
   portion?: { type: TypePortion; poidsKg: number; nombre: number }; // barquettes : poids approximatif et nombre
   lot?: { quantite: number; unite: 'pièces' | 'kg'; prix: number; nombre: number }; // prix fixe par lot, nombre de lots
+  engin?: string; // catégorie d'engin de pêche (informations obligatoires), par défaut selon l'espèce
 };
 
 export type Etal = {
@@ -40,6 +41,7 @@ export type Etal = {
 };
 
 export type LignePanier = {
+  engin?: string; // engin de pêche (copié du produit, pour le bon et la facture)
   produitId: string; espece: string; format?: Format;
   kg: number; // poids estimé (réel après la pesée) ; pour un lot : poids indicatif
   prixKg: number; preparation: string; supplementKg: number;
@@ -86,7 +88,7 @@ export type Sortie = { etalId: string; prenom: string; port: string; bateau: str
 export type Precommande = { id: string; etalId: string; clientPrenom: string; espece: string; kg: number; prixKg: number; statut: 'en_attente' | 'convertie' | 'non_servie' | 'annulee'; bonCode?: string; kgServi?: number; raison?: string; mienne: boolean };
 
 // Avis public d'un client sur un étal (après un achat retiré)
-export type Avis = { code: string; prenom: string; note: number; commentaire: string; le: string };
+export type Avis = { code: string; prenom: string; note: number; commentaire: string; le: string; achatLe?: string };
 
 // Une étape du suivi d'un bon (réservée, payée, retirée…), écrite par le serveur
 export type EtapeSuivi = { etape: 'reservee' | 'commande_creee' | 'payee' | 'paiement_refuse' | 'retiree' | 'annulee' | 'facture_emise'; par: string; quand: number; details: Record<string, unknown> };

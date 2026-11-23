@@ -4,6 +4,7 @@
 // Deux parties distinctes : le poisson, vendu par le pêcheur (facture émise par Pêche Connect en son nom
 // et pour son compte, mandat de facturation prévu aux conditions) ; les services de Pêche Connect
 // (frais de service, livraison). Taux de TVA et mentions à faire valider par l'expert-comptable.
+import { mentionsObligatoires } from './especes';
 import type { LigneBon } from './formats';
 import { getStorage } from 'firebase-admin/storage';
 import PDFDocument from 'pdfkit';
@@ -49,10 +50,10 @@ export async function emettreFacture(code: string): Promise<string | null> {
     const lignes = (b.lignes as LigneBon[]).filter((l) => (l.format === 'lot' ? (l.nombre ?? 0) > 0 : l.kg > 0)).map((l) => {
       if (l.format === 'lot') {
         const n = l.nombre ?? 0, pu = l.prixLot ?? 0;
-        return { designation: l.espece + ' (' + (l.libelle ?? 'lot') + ')', kg: l.kg, prixKgTtc: 0, totalTtc: arrondi(n * pu), detail: n + ' × ' + euro(pu) + ' TTC (prix fixe)' };
+        return { designation: l.espece + ' (' + (l.libelle ?? 'lot') + ') — ' + mentionsObligatoires(l.espece, l.engin), kg: l.kg, prixKgTtc: 0, totalTtc: arrondi(n * pu), detail: n + ' × ' + euro(pu) + ' TTC (prix fixe)' };
       }
       const prep = l.format === 'portion' ? (l.libelle ?? l.preparation.toLowerCase()) : l.preparation.toLowerCase() + (l.tete === 'sans' ? ', sans tête' : '');
-      return { designation: l.espece + ' (' + prep + ')', kg: l.kg, prixKgTtc: arrondi(l.prixKg + l.supplementKg), totalTtc: arrondi(l.kg * (l.prixKg + l.supplementKg)) };
+      return { designation: l.espece + ' (' + prep + ') — ' + mentionsObligatoires(l.espece, l.engin), kg: l.kg, prixKgTtc: arrondi(l.prixKg + l.supplementKg), totalTtc: arrondi(l.kg * (l.prixKg + l.supplementKg)) };
     });
     const poissonTtc = arrondi(lignes.reduce((s, l) => s + l.totalTtc, 0));
     const lignesServices = [{ designation: 'Frais de service Pêche Connect', totalTtc: fraisService }];
@@ -117,8 +118,10 @@ export function fabriquerPdf(f: DonneesFacture): Promise<Buffer> {
       doc.moveDown(0.4).fontSize(10);
       for (const l of lignes) {
         const y = doc.y;
-        doc.text(l.designation + (l.detail ? ' — ' + l.detail : ''), 50, y, { width: 380 });
+        doc.text(l.designation + (l.detail ? ' — ' + l.detail : ''), 50, y, { width: 370 });
+        const fin = doc.y; // la désignation peut tenir sur plusieurs lignes (mentions obligatoires)
         doc.text(euro(l.total), 430, y, { width: 115, align: 'right' });
+        doc.x = 50; doc.y = Math.max(fin, doc.y) + 2;
       }
       doc.moveDown(0.3);
       for (const [lib, val, gras] of [['Total HT', bloc.ht, false], ['TVA ' + pct(bloc.taux), bloc.tva, false], ['Total TTC', bloc.ttc, true]] as const) {

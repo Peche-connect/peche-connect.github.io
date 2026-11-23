@@ -1,5 +1,5 @@
 import { Redirect, Tabs } from 'expo-router';
-import { IcArrivage, IcBons, IcCompte, IcMessages } from '../../src/components/icones';
+import { IcArrivage, IcBons, IcCompte, IcMessages, IcVentes } from '../../src/components/icones';
 import { useApp } from '../../src/store';
 import { couleurs as c, polices as f } from '../../src/theme';
 
@@ -14,7 +14,7 @@ export default function OngletsPecheur() {
   return (
     <Tabs screenOptions={{
       headerShown: false, tabBarActiveTintColor: c.marine, tabBarInactiveTintColor: c.gris,
-      tabBarLabelStyle: { fontFamily: f.gras, fontSize: 12, lineHeight: 18, height: 20, overflow: 'visible' },
+      tabBarLabelStyle: { fontFamily: f.gras, fontSize: 11, lineHeight: 18, height: 20, overflow: 'visible' },
       tabBarBadgeStyle: { backgroundColor: c.accent, color: c.surAccent, fontFamily: f.tresGras, fontSize: 11 },
       sceneStyle: { backgroundColor: c.fond },
       tabBarStyle: { height: 74, paddingTop: 6, paddingBottom: 14, backgroundColor: c.fond, borderTopColor: c.ligne },
@@ -24,6 +24,7 @@ export default function OngletsPecheur() {
       <Tabs.Screen name="reservations" options={{ title: 'Réservations', tabBarBadge: aPreparer || undefined, tabBarIcon: ({ color }) => <IcBons couleur={color} /> }} />
       <Tabs.Screen name="besoins" options={{ title: 'Besoins pros', tabBarBadge: besoins || undefined, tabBarIcon: ({ color }) => <IcCompte couleur={color} /> }} />
       <Tabs.Screen name="messages" options={{ title: 'Messages', tabBarBadge: nonLus || undefined, tabBarIcon: ({ color }) => <IcMessages couleur={color} /> }} />
+      <Tabs.Screen name="ventes" options={{ title: 'Ventes', tabBarIcon: ({ color }) => <IcVentes couleur={color} /> }} />
     </Tabs>
   );
 }

@@ -256,6 +256,15 @@ export async function especesSuivies() {
   const u = await utilisateur(); if (!u) return [];
   return ((await getDoc(doc(db(), 'profils', u.uid))).data()?.suivis ?? []) as string[];
 }
+// Pêcheurs favoris (identifiants d'étals)
+export async function etalsFavoris() {
+  const u = await utilisateur(); if (!u) return [];
+  return ((await getDoc(doc(db(), 'profils', u.uid))).data()?.favoris ?? []) as string[];
+}
+export async function suivreEtal(etalId: string, oui: boolean) {
+  const uid = await moi();
+  await essai(() => updateDoc(doc(db(), 'profils', uid), { favoris: oui ? arrayUnion(etalId) : arrayRemove(etalId) }));
+}
 
 // Temps réel : la fonction est appelée dès qu'une donnée change (message, bon payé, arrivage…)
 export function ecouterChangements(f: () => void): () => void {
@@ -418,7 +427,7 @@ export const equipeFacture = (numero: string) => fonction<{ nom: string; pdf: st
 export const laisserAvis = (code: string, note: number, commentaire: string) => fonction<{ ok: boolean }>('laisserAvis', { code, note, commentaire });
 export async function chargerAvis(etalId: string): Promise<Avis[]> {
   const q = await getDocs(query(collection(db(), 'avis'), where('etalId', '==', etalId), orderBy('le', 'desc'), limit(5)));
-  return q.docs.map((d) => { const a = d.data(); return { code: d.id, prenom: a.prenom, note: a.note, commentaire: a.commentaire ?? '', le: a.le?.toDate?.().toISOString() ?? '' }; });
+  return q.docs.map((d) => { const a = d.data(); return { code: d.id, prenom: a.prenom, note: a.note, commentaire: a.commentaire ?? '', le: a.le?.toDate?.().toISOString() ?? '', achatLe: a.achatLe?.toDate?.().toISOString() ?? undefined }; });
 }
 
 // ───────── Réservations avant la sortie ─────────
@@ -449,3 +458,16 @@ export const annulerSortie = (motif: string) => fonction<{ ok: boolean }>('annul
 export const annulerParClient = (code: string) => fonction<{ ok: boolean }>('annulerParClient', { code });
 export const annulerParPecheur = (code: string) => fonction<{ ok: boolean }>('annulerParPecheur', { code });
 export const clientAbsent = (code: string) => fonction<{ debite: number }>('clientAbsent', { code });
+
+// ───────── Mes ventes (pêcheur) ─────────
+export type Periode = { nombre: number; montant: number; commissions: number };
+export type MesVentes = { semaine: Periode; mois: Periode; annee: Periode; parMois: { mois: string; montant: number }[];
+  dernieres: { code: string; client: string; montant: number; commission: number; rembourse: number; le: string | null }[];
+  soldeDisponible: number; soldeEnAttente: number; virements: { montant: number; date: string; statut: string }[] };
+export const mesVentes = () => fonction<MesVentes>('mesVentes', {});
+
+// ───────── Chiffres (espace équipe) ─────────
+export type PeriodeChiffres = { ventes: number; montant: number; revenuPlateforme: number; panierMoyen: number; pecheursActifs: number; clientsActifs: number; clientsFideles: number; pros: number };
+export type Chiffres = { jour: PeriodeChiffres; semaine: PeriodeChiffres; mois: PeriodeChiffres; parJour: { jour: string; ventes: number; montant: number }[];
+  annulations30j: number; absences30j: number; pecheursVerifies: number };
+export const equipeChiffres = () => fonction<Chiffres>('equipeChiffres', {});

@@ -5,6 +5,7 @@
 //  - lot     : prix fixe (poisson volant, lambi), sans pesée.
 import { randomBytes } from 'node:crypto';
 import { erreur } from './commun';
+import { enginDefaut, enginValide } from './especes';
 import { preparationConnue } from './regles';
 
 export type Format = 'kilo' | 'piece' | 'portion' | 'lot';
@@ -16,10 +17,11 @@ export type Produit = {
   pasKg?: number; pieces?: { id: string; poidsKg: number }[]; teteAuChoix?: boolean;
   portion?: { type: typeof TYPES_PORTION[number]; poidsKg: number; nombre: number };
   lot?: { quantite: number; unite: 'pièces' | 'kg'; prix: number; nombre: number };
+  engin?: string;
 };
 export type LigneBon = {
   produitId: string | null; espece: string; format?: Format; kg: number; prixKg: number; preparation: string; supplementKg: number;
-  pieceId?: string; tete?: 'avec' | 'sans'; nombre?: number; prixLot?: number; libelle?: string;
+  pieceId?: string; tete?: 'avec' | 'sans'; nombre?: number; prixLot?: number; libelle?: string; engin?: string;
 };
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -56,7 +58,13 @@ function preparations(brut: unknown, espece: string, defaut: string): Prep[] {
 }
 
 // Contrôle d'un produit envoyé par le pêcheur ; renvoie null s'il n'y a rien à vendre
+// engin de pêche : liste fermée (informations obligatoires), sinon celui de l'espèce
 export function produitValide(l: Record<string, unknown>, espece: string): Omit<Produit, 'id'> | null {
+  if (l.engin !== undefined && l.engin !== null && l.engin !== '' && !enginValide(l.engin)) throw erreur('invalid-argument', 'Engin de pêche inconnu pour ' + espece + '.');
+  const p = produitBrut(l, espece);
+  return p ? { ...p, engin: enginValide(l.engin) ?? enginDefaut(espece) } : null;
+}
+function produitBrut(l: Record<string, unknown>, espece: string): Omit<Produit, 'id'> | null {
   const format = (FORMATS.includes(l.format as Format) ? l.format : 'kilo') as Format;
   const prixKg = r2(Number(l.prixKg));
   const prixOk = prixKg > 0 && prixKg < 500;
@@ -108,6 +116,9 @@ export type Demande = { produitId?: unknown; kg?: unknown; preparation?: unknown
 
 // Retire du stock (produit déjà copié) et renvoie la ligne du bon, avec les prix du serveur
 export function prendre(p: Produit, l: Demande): LigneBon {
+  return { ...prendreBrut(p, l), engin: p.engin ?? enginDefaut(p.espece) };
+}
+function prendreBrut(p: Produit, l: Demande): LigneBon {
   const plusAssez = (reste: string) => erreur('failed-precondition', 'Plus assez de ' + p.espece.toLowerCase() + ' (reste ' + reste + ').');
   const prep = (nom: unknown) => p.preparations.find((x) => x.nom === nom) ?? p.preparations[0] ?? { nom: 'Entier', supplementKg: 0 };
   switch (formatDe(p)) {

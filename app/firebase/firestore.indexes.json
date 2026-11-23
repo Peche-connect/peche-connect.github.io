@@ -203,6 +203,24 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "bons",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "pecheurId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "statut",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "retireLe",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

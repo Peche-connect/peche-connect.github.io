@@ -30,10 +30,12 @@ service cloud.firestore {
     match /profils/{uid} {
       allow read: if connecte() && moi() == uid;
       allow update: if connecte() && moi() == uid
-        && seulement(['prenom', 'commune', 'suivis'])
+        && seulement(['prenom', 'commune', 'suivis', 'favoris'])
         && sansChiffres(request.resource.data.prenom, 40)
         && (request.resource.data.get('commune', null) == null || sansChiffres(request.resource.data.commune, 40))
-        && request.resource.data.suivis is list && request.resource.data.suivis.size() <= 20;
+        && request.resource.data.get('suivis', []) is list && request.resource.data.get('suivis', []).size() <= 20
+        // pêcheurs favoris : liste d'identifiants d'étals (alertes à chaque arrivage ou sortie annoncée)
+        && request.resource.data.get('favoris', []) is list && request.resource.data.get('favoris', []).size() <= 50;
     }
 
     // Professionnels : SIRET et adresse visibles seulement par le pro lui-même

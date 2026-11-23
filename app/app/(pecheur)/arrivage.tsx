@@ -8,7 +8,9 @@ import { ESPECES } from '../../src/data/demo';
 import { fermeture } from '../../src/data/fermetures';
 import { euro, heure, kg } from '../../src/format';
 import { changer as changerTaille, useEchelle } from '../../src/taille';
-import { NOMS_FORMATS, produitParDefaut, stockKg } from '../../src/formats';
+import { ENGINS, enginDefaut } from '../../src/data/especes';
+import { partagerAutre, partagerImage, partagerWhatsApp } from '../../src/partage';
+import { disponible, NOMS_FORMATS, produitParDefaut, stockKg } from '../../src/formats';
 import type { Format, Produit, TypePortion } from '../../src/types';
 import { useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
@@ -37,6 +39,8 @@ export default function Arrivage() {
   const e = app.etal(s.etalId)!;
   const [lignes, setLignes] = useState<L[]>([]);
   const [ajout, setAjout] = useState(false);
+  const [enginDe, setEnginDe] = useState<number | null>(null);
+  const [partage, setPartage] = useState(''); // ligne dont on choisit l'engin de pêche
   const [publie, setPublie] = useState(false);
   const [envoi, setEnvoi] = useState(false);
   const [photo, setPhoto] = useState<{ uri: string; type?: string } | null>(null);
@@ -91,6 +95,9 @@ export default function Arrivage() {
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
               {(Object.keys(NOMS_FORMATS) as Format[]).map((f) => <Chip key={f} titre={NOMS_FORMATS[f]} actif={l.format === f} onPress={() => changerFormat(i, f)} />)}
             </View>
+            <Pressable onPress={() => setEnginDe(i)} accessibilityRole="button" accessibilityLabel={'Engin de pêche pour ' + l.espece}>
+              <T gris petit>Pêché avec : <T gras petit>{(l.engin || enginDefaut(l.espece)).toLowerCase()}</T> · <T gras petit style={{ color: c.marine }}>changer</T></T>
+            </Pressable>
             {l.format !== 'lot' ? (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
                 <T gris style={{ width: 92 }}>Prix au kilo</T>
@@ -175,6 +182,18 @@ export default function Arrivage() {
         </View>
         {doublon ? <T gras style={{ color: c.alerte }}>Une espèce apparaît deux fois avec le même format : retirez-en une.</T> : null}
         {publie ? <T gras style={{ color: c.vert, marginTop: 8 }}>Arrivage publié : les clients le voient tout de suite.</T> : null}
+        {e.produits.some(disponible) ? (
+          <View style={{ borderWidth: 1, borderColor: publie ? c.marine : c.ligne, borderRadius: 14, padding: 14, gap: 8, marginTop: 8 }}>
+            <T tresGras style={{ fontSize: 16 }}>Faites-le savoir</T>
+            <T gris petit>Envoyez votre arrivage à vos clients habituels et sur votre statut WhatsApp, avec le lien de votre étal. Votre numéro n’y figure pas : ils réservent et paient dans l’appli.</T>
+            <Bouton titre="Partager sur WhatsApp" onPress={() => partagerWhatsApp(e)} />
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {Platform.OS === 'web' ? <Bouton clair titre="Image statut" style={{ flex: 1, height: 46 }} onPress={async () => setPartage(await partagerImage(e))} /> : null}
+              <Bouton clair titre="Autre appli" style={{ flex: 1, height: 46 }} onPress={async () => setPartage(await partagerAutre(e))} />
+            </View>
+            {partage === 'copie' ? <T gris petit>Texte copié : collez-le où vous voulez.</T> : partage === 'telecharge' ? <T gris petit>Image enregistrée : ajoutez-la à votre statut WhatsApp depuis votre téléphone.</T> : null}
+          </View>
+        ) : null}
         {app.enAttente ? (
           <View style={{ backgroundColor: '#fde7dc', borderRadius: 12, padding: 12, gap: 6, marginTop: 8 }}>
             <T tresGras>Pas de réseau : arrivage gardé sur le téléphone</T>
@@ -187,6 +206,13 @@ export default function Arrivage() {
         <Bouton titre="Mettre en vente" desactive={!enVente || doublon || envoi} droite={<T gras style={{ color: '#fff', opacity: 0.8 }}>{total ? kg(r1(total)) + ' · ' : ''}{enVente} produit{enVente > 1 ? 's' : ''}</T>}
           onPress={async () => { setEnvoi(true); const ok = await app.publierArrivage(e.id, lignes.filter((l) => !vide(l)), photo ?? undefined); setEnvoi(false); if (ok === true) { setPublie(true); setPhoto(null); } }} />
       </View>
+      <Feuille visible={enginDe !== null} onFermer={() => setEnginDe(null)} titre="Pêché avec quel engin ?">
+        <T gris style={{ marginBottom: 8 }}>Information obligatoire pour la vente au consommateur, affichée sur votre étal et le bon.</T>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {ENGINS.map((x) => <Chip key={x} titre={x} actif={enginDe !== null && (lignes[enginDe]?.engin || enginDefaut(lignes[enginDe]?.espece ?? '')) === x}
+            onPress={() => { if (enginDe !== null) maj(enginDe, (y) => ({ ...y, engin: x })); setEnginDe(null); }} />)}
+        </View>
+      </Feuille>
       <Feuille visible={ajout} onFermer={() => setAjout(false)} titre="Ajouter une espèce">
         {ESPECES.map((x) => {
           const f = fermeture(x); // période de fermeture : vente bloquée

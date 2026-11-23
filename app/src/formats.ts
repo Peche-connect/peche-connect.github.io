@@ -1,3 +1,4 @@
+import { enginDefaut } from './data/especes';
 // Formats de vente : mêmes règles que le serveur (firebase/functions/src/formats.ts)
 import { FRAIS_SERVICE, kg, MARGE_EMPREINTE, euro } from './format';
 import type { Format, LignePanier, Produit } from './types';
@@ -12,7 +13,7 @@ export function formatParDefaut(espece: string): Format {
 }
 
 export function produitParDefaut(espece: string, format: Format = formatParDefaut(espece)): Omit<Produit, 'id'> {
-  const base = { espece, format, prixKg: 12, dispoKg: 0, preparations: [] as Produit['preparations'] };
+  const base = { espece, format, prixKg: 12, dispoKg: 0, preparations: [] as Produit['preparations'], engin: enginDefaut(espece) };
   switch (format) {
     case 'kilo': return { ...base, dispoKg: 5, pasKg: 0.5, preparations: espece === 'Thon jaune' ? [{ nom: 'En tranches', supplementKg: 0 }, { nom: 'En darnes', supplementKg: 1 }] : [{ nom: 'Entier', supplementKg: 0 }, { nom: 'Écaillé et vidé', supplementKg: 1 }] };
     case 'piece': return { ...base, prixKg: 13, pieces: [{ id: 'p1', poidsKg: 3 }, { id: 'p2', poidsKg: 4 }], teteAuChoix: espece !== 'Langouste',
@@ -23,7 +24,7 @@ export function produitParDefaut(espece: string, format: Format = formatParDefau
 }
 
 // Anciennes données (sans format) : vendues au kilo
-export const normaliserProduit = (p: Produit): Produit => (p.format ? p : { ...p, format: 'kilo', pasKg: 0.5 });
+export const normaliserProduit = (p: Produit): Produit => ({ ...(p.format ? p : { ...p, format: 'kilo' as const, pasKg: 0.5 }), engin: p.engin || enginDefaut(p.espece) });
 
 export const stockKg = (p: Produit) =>
   p.format === 'piece' ? (p.pieces ?? []).reduce((t, x) => t + x.poidsKg, 0)

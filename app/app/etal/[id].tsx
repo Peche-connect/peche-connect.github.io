@@ -5,8 +5,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { IcVerrou } from '../../src/components/icones';
 import { Bouton, Chip, Feuille, Pastille, Prix, Rond, Stepper, T, Vide, s } from '../../src/components/ui';
 import { euro, heure, kg } from '../../src/format';
+import { mentionsObligatoires } from '../../src/data/especes';
 import { disponible, offre, sousTotal } from '../../src/formats';
 import { ListeAvis } from '../../src/components/Avis';
+import { partagerAutre, partagerWhatsApp } from '../../src/partage';
 import { useApp } from '../../src/store';
 import { couleurs as c } from '../../src/theme';
 
@@ -17,6 +19,7 @@ export default function EtalEcran() {
   const [reglage, setReglage] = useState<{ produitId: string; kg: number } | null>(null);
   if (!e) return <SafeAreaView style={{ flex: 1 }}><Vide titre="Étal introuvable" texte="Il n’est peut-être plus en ligne aujourd’hui." action="Retour à l’accueil" onAction={() => router.replace('/(client)')} /></SafeAreaView>;
 
+  const suivi = app.e.favoris.includes(e.id); // pêcheur favori : alerte à chaque arrivage ou sortie
   const autre = app.e.panier && app.e.panier.etalId !== e.id;
   const nb = app.e.panier?.etalId === e.id ? app.e.panier.lignes.length : 0;
   const pro = !!app.e.session?.pro;
@@ -43,6 +46,14 @@ export default function EtalEcran() {
             <Pastille texte={'Retrait jusqu’à ' + heure(e.limiteRetrait)} style={{ backgroundColor: c.doux }} />
             <Pastille texte={e.bateau} style={{ backgroundColor: c.doux }} />
           </View>
+        </View>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 16, rowGap: 8, paddingHorizontal: 16, marginBottom: 12 }}>
+          <Pressable accessibilityRole="button" accessibilityLabel={suivi ? 'Ne plus suivre ' + e.pecheur : 'Suivre ' + e.pecheur}
+            onPress={() => (app.e.session ? app.suivreEtal(e.id, !suivi) : router.push({ pathname: '/connexion', params: { retour: '/etal/' + e.id } }))}>
+            <T tresGras style={{ color: c.marine }}>{suivi ? '✓ Suivi' : 'Suivre ce pêcheur'}</T>
+          </Pressable>
+          <Pressable onPress={() => partagerWhatsApp(e)} accessibilityRole="button"><T tresGras style={{ color: c.marine }}>Envoyer sur WhatsApp</T></Pressable>
+          <Pressable onPress={() => partagerAutre(e)} accessibilityRole="button"><T tresGras style={{ color: c.marine }}>Partager</T></Pressable>
         </View>
         {app.sortie(e.id) ? (
           <Pressable onPress={() => router.push({ pathname: '/sortie/[id]', params: { id: e.id } })} accessibilityRole="button" style={{ marginHorizontal: 16, marginBottom: 12, padding: 12, borderRadius: 12, backgroundColor: c.doux }}>
@@ -83,6 +94,7 @@ export default function EtalEcran() {
                 <View style={{ flex: 1, gap: 3 }}>
                   <T tresGras style={{ fontSize: 16 }}>{p.espece}{p.format === 'portion' && p.portion ? ' · ' + p.portion.type.toLowerCase() : ''}</T>
                   <T gris petit>{o.detail}</T>
+                  <T gris style={{ fontSize: 12 }}>{mentionsObligatoires(p.espece, p.engin)}</T>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                     <Prix texte={o.prix} />
                     <T petit style={{ color: !dispo ? c.alerte : c.vert }}>{!dispo ? 'épuisé' : o.reste + ' dispo'}</T>

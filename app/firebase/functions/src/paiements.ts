@@ -252,3 +252,77 @@ export const sante = onRequest({ region: REGION, cors: false, maxInstances: 2 },
   const ok = !!t && t.toMillis() > Date.now() - 15 * 60_000;
   res.status(ok ? 200 : 503).json({ ok, taches: t?.toDate().toISOString() ?? null });
 });
+
+// ───────── « Mes ventes » du pêcheur : ce que l'appli lui rapporte ─────────
+export const mesVentes = onCall({ ...APPEL, secrets: [STRIPE_SECRET_KEY] }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid || req.auth?.token.role !== 'pecheur') throw erreur('permission-denied', 'Réservé aux pêcheurs.');
+  const etalId = uid;
+  const maintenant = Date.now(), j = jour(maintenant), annee = Number(j.slice(0, 4)), mois = j.slice(5, 7);
+  const [cumul, recents, compte] = await Promise.all([
+    db.doc('ventesVendeurs/' + etalId + '_' + annee).get(),
+    db.collection('bons').where('pecheurId', '==', uid).where('statut', 'in', ['retire', 'rembourse']).orderBy('retireLe', 'desc').limit(60).get(),
+    db.doc('comptesStripe/' + etalId).get(),
+  ]);
+  const c = cumul.data() ?? {};
+  const semaine = recents.docs.map((d) => d.data()).filter((b) => (b.retireLe?.toMillis?.() ?? 0) > maintenant - 7 * 86400_000);
+  const somme = (l: FirebaseFirestore.DocumentData[], k: string) => Math.round(l.reduce((s, b) => s + Number(b[k] ?? 0), 0) * 100) / 100;
+  const m = c.mois?.[mois] ?? {};
+  // argent : ce qui attend chez Stripe et les derniers virements vers son compte bancaire
+  let soldeDisponible = 0, soldeEnAttente = 0; let virements: { montant: number; date: string; statut: string }[] = [];
+  const idCompte = compte.data()?.compte as string | undefined;
+  if (idCompte) {
+    const [solde, payouts] = await Promise.all([
+      stripe().balance.retrieve({}, { stripeAccount: idCompte }).catch(() => null),
+      stripe().payouts.list({ limit: 8 }, { stripeAccount: idCompte }).catch(() => null),
+    ]);
+    soldeDisponible = (solde?.available ?? []).filter((x) => x.currency === 'eur').reduce((s, x) => s + x.amount, 0) / 100;
+    soldeEnAttente = (solde?.pending ?? []).filter((x) => x.currency === 'eur').reduce((s, x) => s + x.amount, 0) / 100;
+    virements = (payouts?.data ?? []).map((p) => ({ montant: p.amount / 100, date: new Date(p.arrival_date * 1000).toISOString(), statut: p.status }));
+  }
+  return {
+    semaine: { nombre: semaine.length, montant: somme(semaine, 'montantPaye'), commissions: somme(semaine, 'commission') },
+    mois: { nombre: Number(m.nombre ?? 0), montant: Math.round(Number(m.montant ?? 0) * 100) / 100, commissions: Math.round(Number(m.commissions ?? 0) * 100) / 100 },
+    annee: { nombre: Number(c.nombre ?? 0), montant: Math.round(Number(c.montant ?? 0) * 100) / 100, commissions: Math.round(Number(c.commissions ?? 0) * 100) / 100 },
+    parMois: Object.entries((c.mois ?? {}) as Record<string, { montant: number }>).map(([k, v]) => ({ mois: k, montant: Math.round(Number(v.montant ?? 0) * 100) / 100 })).sort((a, b) => a.mois.localeCompare(b.mois)),
+    dernieres: recents.docs.slice(0, 15).map((d) => { const b = d.data(); return { code: d.id, client: b.clientPrenom, montant: b.montantPaye, commission: b.commission ?? 0, rembourse: b.rembourse ?? 0, le: b.retireLe?.toDate?.().toISOString() ?? null }; }),
+    soldeDisponible, soldeEnAttente, virements,
+  };
+});
+
+// ───────── Tableau de bord de l'équipe : les chiffres pour piloter (et pour les banques) ─────────
+export const equipeChiffres = onCall(APPEL, async (req) => {
+  await membreEquipe(req);
+  const maintenant = Date.now(), J = 86400_000;
+  const [retires, annules, pecheurs] = await Promise.all([
+    db.collection('bons').where('retireLe', '>=', Timestamp.fromMillis(maintenant - 30 * J)).limit(5000).get(),
+    db.collection('bons').where('creeLe', '>=', Timestamp.fromMillis(maintenant - 30 * J)).where('statut', '==', 'annule').limit(5000).get(),
+    db.collection('etals').where('statut', '==', 'verifie').count().get(),
+  ]);
+  const ventes = retires.docs.map((d) => d.data()).filter((b) => ['retire', 'rembourse'].includes(b.statut) && b.montantPaye > 0);
+  const net = (b: FirebaseFirestore.DocumentData) => Number(b.montantPaye ?? 0) - Number(b.rembourse ?? 0);
+  const periode = (jours: number) => {
+    const l = ventes.filter((b) => b.retireLe.toMillis() > maintenant - jours * J);
+    const clients = new Map<string, number>();
+    l.forEach((b) => { if (b.clientId) clients.set(b.clientId, (clients.get(b.clientId) ?? 0) + 1); });
+    const montant = l.reduce((s, b) => s + net(b), 0);
+    return {
+      ventes: l.length, montant: Math.round(montant * 100) / 100,
+      revenuPlateforme: Math.round(l.reduce((s, b) => s + Number(b.commission ?? 0), 0) * 100) / 100,
+      panierMoyen: l.length ? Math.round((montant / l.length) * 100) / 100 : 0,
+      pecheursActifs: new Set(l.map((b) => b.etalId)).size,
+      clientsActifs: clients.size, clientsFideles: [...clients.values()].filter((n) => n >= 2).length,
+      pros: l.filter((b) => b.pro).length,
+    };
+  };
+  const parJour = Array.from({ length: 30 }, (_, i) => {
+    const fin = maintenant - (29 - i) * J, debut = fin - J;
+    const l = ventes.filter((b) => b.retireLe.toMillis() > debut && b.retireLe.toMillis() <= fin);
+    return { jour: jour(fin), ventes: l.length, montant: Math.round(l.reduce((s, b) => s + net(b), 0) * 100) / 100 };
+  });
+  return {
+    jour: periode(1), semaine: periode(7), mois: periode(30), parJour,
+    annulations30j: annules.size, absences30j: annules.docs.filter((d) => Number(d.data().penaliteAbsence ?? 0) > 0).length,
+    pecheursVerifies: pecheurs.data().count,
+  };
+});

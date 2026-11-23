@@ -612,6 +612,31 @@ describe('Argent, contrôles et photos', () => {
     assert.match(r.csv.split('\n')[0], /nombre_ventes;montant_ttc/);
     assert.ok(r.csv.includes(etalId));
   });
+  test('« Mes ventes » du pêcheur : cumul, dernières ventes, virements', async () => {
+    await assert.rejects(appeler('client', 'mesVentes', {}), /Réservé aux pêcheurs/);
+    const v = await appeler('pecheur', 'mesVentes', {});
+    assert.ok(v.annee.montant > 0 && v.annee.nombre >= 1);
+    assert.ok(v.dernieres.length >= 1);
+    assert.ok(Array.isArray(v.virements));
+  });
+  test('tableau de bord de l’équipe', async () => {
+    await assert.rejects(appeler('pecheur', 'equipeChiffres', {}), /Réservé à l’équipe/);
+    const x = await appeler('equipe', 'equipeChiffres', {});
+    assert.ok(x.mois.ventes >= 2); assert.ok(x.mois.montant > 0); assert.ok(x.mois.pecheursActifs >= 1);
+    assert.equal(x.parJour.length, 30); assert.ok(x.pecheursVerifies >= 1);
+  });
+  test('informations obligatoires : engin de pêche sur le produit et le bon, liste fermée', async () => {
+    await assert.rejects(appeler('pecheur', 'publierArrivage', { lignes: [{ espece: 'Thon jaune', prixKg: 14, dispoKg: 10, engin: 'explosif' }] }), /Engin de pêche inconnu/);
+    const e = await lire('etals/' + etalId);
+    assert.ok(e.produits.every((p) => p.engin), 'chaque produit a son engin');
+  });
+  test('pêcheur favori : alerté à son prochain arrivage', async () => {
+    await db.doc('profils/' + comptes.autre.uid).set({ favoris: [etalId] }, { merge: true });
+    await db.doc('etals/' + etalId).update({ notifieLe: null });
+    const e = await lire('etals/' + etalId);
+    await appeler('pecheur', 'publierArrivage', { lignes: e.produits.map(({ id, ...p }) => p) });
+    assert.ok((await lire('etals/' + etalId)).notifieLe, 'alerte envoyée (clients favoris et espèces suivies)');
+  });
   test('adresse de santé pour la surveillance', async () => {
     await lancerTaches();
     const r = await fetch(FONCTIONS + 'sante');

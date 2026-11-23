@@ -61,9 +61,14 @@ export const publierArrivage = onCall(APPEL, async (req) => {
   const dernier = e.notifieLe?.toMillis?.() ?? 0;
   const especes = [...new Set(produits.map((p) => p.espece))];
   if (especes.length && Date.now() - dernier > 2 * 3600_000) {
-    const suiveurs = await db.collection('profils').where('suivis', 'array-contains-any', especes.slice(0, 30)).get();
+    // + les clients qui ont ce pêcheur en favori
+    const [suiveurs, fideles] = await Promise.all([
+      db.collection('profils').where('suivis', 'array-contains-any', especes.slice(0, 30)).get(),
+      db.collection('profils').where('favoris', 'array-contains', uid).get(),
+    ]);
     await etalRef.update({ notifieLe: FieldValue.serverTimestamp() });
-    await notifier(suiveurs.docs.map((p) => p.id).filter((id) => id !== uid), 'Arrivage à ' + e.port,
+    const ids = [...new Set([...suiveurs.docs, ...fideles.docs].map((p) => p.id))].filter((id) => id !== uid);
+    await notifier(ids, 'Arrivage chez ' + e.prenom + ' (' + e.port + ')',
       e.prenom + ' vient de débarquer : ' + especes.join(', ').toLowerCase(), { lien: '/etal/' + uid });
   }
   return { produits: produits.length, ...sortie };

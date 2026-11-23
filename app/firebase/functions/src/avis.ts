@@ -29,7 +29,8 @@ export const laisserAvis = onCall(APPEL, async (req) => {
     const e = (await t.get(etalRef)).data();
     if (!e) throw erreur('not-found', 'Étal introuvable.');
     const somme = Number(e.noteSomme ?? 0) + note; const nombre = Number(e.noteNombre ?? 0) + 1;
-    t.set(db.doc('avis/' + code), { etalId: b.etalId, prenom: b.clientPrenom ?? 'Client', note, commentaire, le: FieldValue.serverTimestamp(), pro: !!b.pro });
+    // date de l'achat affichée à côté de l'avis (article D. 111-17 du Code de la consommation)
+    t.set(db.doc('avis/' + code), { etalId: b.etalId, prenom: b.clientPrenom ?? 'Client', note, commentaire, le: FieldValue.serverTimestamp(), achatLe: b.retireLe ?? null, pro: !!b.pro });
     t.update(bonRef, { avis: note });
     t.update(etalRef, { noteSomme: somme, noteNombre: nombre, note: Math.round((somme / nombre) * 10) / 10, avis: nombre });
     return b.etalId as string;

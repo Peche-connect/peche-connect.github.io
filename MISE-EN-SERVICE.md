@@ -117,6 +117,9 @@ reconstruit le site en mode réel et le publie.
 1. dash.cloudflare.com (compte de la société) → **Workers & Pages > Créer > Pages > Connecter à Git** →
    dépôt `Peche-connect/peche-connect.github.io`, branche `main`, **commande de build : aucune**,
    **dossier de sortie : `docs`**. Les fichiers `_headers` (sécurité) et `_redirects` (liens de l'appli) sont prêts.
+   Dans **Paramètres > Variables d'environnement**, ajouter `FIREBASE_PROJECT_ID` = `peche-connect` : la petite
+   fonction `functions/etal/[id].js` (à la racine du dépôt) fabrique alors l'aperçu des liens d'étal partagés sur
+   WhatsApp (« Arrivage chez Jean-Marc · Le Robert », prix, photo). Sans cette variable, l'aperçu général s'affiche.
 2. **Ajouter un domaine personnalisé** `peche-connect.fr` : Cloudflare indique les deux serveurs DNS à
    mettre chez IONOS (Domaines > peche-connect.fr > Serveurs de noms). La gestion DNS passe chez Cloudflare.
 3. Une fois le site ouvert sur peche-connect.fr : **passer le dépôt GitHub en privé** (GitHub Pages
@@ -126,6 +129,17 @@ reconstruit le site en mode réel et le publie.
 
 zoho.com/mail → offre gratuite → domaine `peche-connect.fr` → ajouter dans Cloudflare (DNS) les
 enregistrements MX, SPF et DKIM que Zoho affiche → créer `contact@peche-connect.fr` (cité dans les pages légales).
+
+## 6 bis. Identité de la société dans l'appli (5 min, dès le Kbis)
+
+- Remplir **`app/src/societe.ts`** (capital, siège, RCS, TVA, gérant, **médiateur de la consommation**) : les
+  pages légales se mettent à jour toutes seules. Le médiateur est obligatoire avant d'ouvrir aux particuliers
+  (adhésion payante à un organisme agréé, liste sur economie.gouv.fr/mediation-conso).
+- Remplir aussi **Firestore > reglages > societe** (mêmes informations) : elles figurent sur les factures des pros.
+- Faire relire les trois pages légales (`/legal/mentions`, `/legal/confidentialite`, `/legal/conditions`) par un juriste.
+- **Informations obligatoires sur le poisson** (`app/src/data/especes.ts`, copie identique dans
+  `app/firebase/functions/src/especes.ts`) : faire valider par la Direction de la Mer les correspondances marquées
+  `aConfirmer` (nom local → nom scientifique, engin par défaut), notamment colas, vivaneau, thazard, balaou, lambi.
 
 ## 7. Premiers pêcheurs
 

@@ -2,6 +2,7 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Chiffres } from '../src/components/Chiffres';
 import { Bouton, Chip, EnTete, Feuille, T, Vide } from '../src/components/ui';
 import { euro } from '../src/format';
 import * as B from '../src/services/backend';
@@ -93,6 +94,9 @@ export default function Equipe() {
       {!t ? <Vide titre="Chargement…" texte="" perso={false} /> : (
         <ScrollView contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: 40 }}>
           {info ? <View style={{ backgroundColor: c.doux, borderRadius: 12, padding: 12 }}><T gras>{info}</T></View> : null}
+
+          <T tresGras style={{ fontSize: 18 }}>Chiffres</T>
+          <Chiffres />
 
           <View style={{ borderWidth: 1, borderColor: t.controle && !t.controle.ok ? c.alerte : c.ligne, borderRadius: 14, padding: 14, gap: 6 }}>
             <T tresGras style={{ fontSize: 16 }}>Contrôle de la nuit {t.controle ? '· ' + t.controle.jour : ''}</T>
